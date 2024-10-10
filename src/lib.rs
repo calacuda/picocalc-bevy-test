@@ -1,13 +1,21 @@
 #![no_main]
 #![no_std]
 
+pub mod env;
+pub mod lfo;
+pub mod osc;
+pub mod synth;
+
+pub const SAMPLE_RATE: u32 = 44_100;
+
 use core::sync::atomic::{AtomicUsize, Ordering};
 use defmt_brtt as _; // global logger
 
 use panic_probe as _;
 
-// TODO(6) Import your HAL
-use some_hal as _; // memory layout
+// Alias for our HAL crate
+// use rp2040_hal as _; // memory layout
+use rp_hal as _; // memory layout
 
 // same panicking *behavior* as `panic-probe` but doesn't print a panic message
 // this prevents the panic message being printed *twice* when `defmt::panic` is invoked
