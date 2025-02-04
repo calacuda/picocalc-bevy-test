@@ -53,11 +53,3 @@ impl LFO {
             + next_index_weight * self.wave_table[next_index]
     }
 }
-
-impl Iterator for LFO {
-    type Item = f32;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        return Some(self.get_sample());
-    }
-}

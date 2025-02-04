@@ -1,5 +1,11 @@
+check:
+  @just cargo check
+
 build:
-  cargo +stable build
+  @just cargo build
+
+cargo CMD:
+  cargo +stable {{CMD}}
 
 flash:
   elf2uf2-rs -d target/thumbv6m-none-eabi/debug/pico-synth
@@ -13,7 +19,7 @@ tmux:
   @just new-window "Reff" ""
   @just new-window "Edit" ""
   @just new-window "Run" ""
-  @just new-window "git" "git status"
+  @just new-window "Git" "git status"
   tmux a -t pico-synth
 
 new-window NAME CMD:

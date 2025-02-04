@@ -1,4 +1,7 @@
-use crate::osc::{Oscillator, Overtone};
+use crate::{
+    lfo::LFO,
+    osc::{Oscillator, Overtone},
+};
 
 pub const WAVE_TABLE_SIZE: usize = 128;
 pub const VOICES: usize = 10;
@@ -6,6 +9,8 @@ pub const VOICES: usize = 10;
 pub struct Synth {
     osc_s: [Oscillator; VOICES],
     wave_table: [f32; WAVE_TABLE_SIZE],
+    lfo: LFO,
+    volume: f32,
 }
 
 impl Synth {
@@ -36,6 +41,8 @@ impl Synth {
         Self {
             osc_s: [Oscillator::new(); VOICES],
             wave_table,
+            lfo: LFO::new(),
+            volume: 0.75,
         }
     }
 
@@ -74,11 +81,15 @@ impl Synth {
 
     pub fn get_sample(&mut self) -> f32 {
         let mut sample = 0.0;
+        let lfo_sample = self.lfo.get_sample();
 
         for ref mut osc in self.osc_s {
-            sample += osc.get_sample(&self.wave_table)
+            if osc.is_pressed() {
+                osc.vibrato(lfo_sample);
+                sample += osc.get_sample(&self.wave_table)
+            }
         }
 
-        sample
+        sample * (self.volume + lfo_sample * 0.125)
     }
 }

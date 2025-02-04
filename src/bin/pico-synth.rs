@@ -1,14 +1,10 @@
 #![no_main]
 #![no_std]
-// #![feature(type_alias_impl_trait)]
 
 use pico_synth as _; // global logger + panicking-behavior + memory layout
 
 #[rtic::app(
-    // TODO: Replace `some_hal::pac` with the path to the PAC
     device = rp2040_hal::pac,
-    // TODO: Replace the `FreeInterrupt1, ...` with free interrupt vectors if software tasks are used
-    // You can usually find the names of the interrupt vectors in the some_hal::pac::interrupt enum.
     dispatchers = [UART1_IRQ],
 )]
 mod app {
@@ -20,16 +16,14 @@ mod app {
     // A shorter alias for the Peripheral Access Crate, which provides low-level
     // register access
     use hal::pac;
-    // use rtic::Mutex;
 
-    // Shared resources go here
+    /// Shared resources go here
     #[shared]
     struct Shared {
-        // clocks:
         synth: Mutex<Synth>,
     }
 
-    // Local resources go here
+    /// Local resources go here
     #[local]
     struct Local {
         // TODO: Add resources
@@ -65,7 +59,7 @@ mod app {
         // TODO: build synth store in Arc Mutex
         let synth = Mutex::new(Synth::new());
 
-        // TODO: spawn thread with super loop arch that generates and sends samples over i2s
+        // TODO: spawn thread (one the second core) with super loop arch that generates and sends samples over i2s
 
         (
             Shared {
@@ -80,7 +74,7 @@ mod app {
 
     //
     #[idle]
-    fn idle(_: idle::Context) -> ! {
+    fn idle(_cx: idle::Context) -> ! {
         defmt::info!("idle");
 
         loop {
@@ -89,7 +83,7 @@ mod app {
         }
     }
 
-    /// modify synth when midid input is recieved
+    /// modify synth when midi input is recieved
     #[task(priority = 1)]
     async fn midi_input(_cx: midi_input::Context) {
         defmt::info!("Hello from task1!");

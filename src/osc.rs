@@ -1,5 +1,5 @@
 use crate::{env::ADSR, synth::WAVE_TABLE_SIZE, SAMPLE_RATE};
-use libm::powf;
+use libm::{fabsf, powf};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Overtone {
@@ -20,7 +20,6 @@ impl WavetableOscillator {
     pub fn new() -> Self {
         Self {
             sample_rate: SAMPLE_RATE as f32,
-            // wave_table: Self::build_wave_table(overtones),
             index: 0.0,
             index_increment: 0.0,
         }
@@ -53,6 +52,10 @@ impl WavetableOscillator {
 pub struct Oscillator {
     wt_osc: WavetableOscillator,
     env_filter: ADSR,
+    /// what midi note is being played by this osc
+    pub playing: u8,
+    frequency: f32,
+    note_space: f32,
 }
 
 impl Oscillator {
@@ -60,6 +63,9 @@ impl Oscillator {
         Self {
             wt_osc: WavetableOscillator::new(),
             env_filter: ADSR::new(),
+            playing: 0,
+            frequency: 0.0,
+            note_space: powf(2.0, 1.0 / 12.0),
         }
     }
 
@@ -69,9 +75,9 @@ impl Oscillator {
 
     pub fn press(&mut self, midi_note: u8) {
         self.env_filter.press();
-        let frequency = Self::get_freq(midi_note);
+        self.frequency = Self::get_freq(midi_note);
 
-        self.wt_osc.set_frequency(frequency);
+        self.wt_osc.set_frequency(self.frequency);
     }
 
     fn get_freq(midi_note: u8) -> f32 {
@@ -87,5 +93,20 @@ impl Oscillator {
 
     pub fn get_sample(&mut self, wave_table: &[f32]) -> f32 {
         self.wt_osc.get_sample(wave_table) * self.env_filter.get_samnple()
+    }
+
+    pub fn vibrato(&mut self, amt: f32) {
+        let next_note = if amt > 0.0 {
+            self.frequency * self.note_space
+        } else if amt == 0.0 {
+            self.wt_osc.set_frequency(self.frequency);
+            return;
+        } else {
+            self.frequency / self.note_space
+        };
+
+        let freq_delta = fabsf(self.frequency - next_note);
+        let adjust_amt = freq_delta * amt * 0.5;
+        self.wt_osc.set_frequency(self.frequency + adjust_amt)
     }
 }
