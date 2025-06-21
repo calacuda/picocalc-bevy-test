@@ -3,7 +3,7 @@
 
 extern crate alloc;
 
-use bevy_ecs::system::{NonSendMut, ResMut};
+use bevy::prelude::*;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use defmt_brtt as _;
 use rp235x_hal::i2c::Controller;
@@ -16,8 +16,6 @@ use rp235x_hal::I2C;
 // Alias for our HAL crate
 use rp235x_hal::{self as hal, gpio::FunctionSioOutput};
 
-use bevy_app::{App, Plugin};
-use bevy_ecs::prelude::Resource;
 // use defmt_rtt as _;
 use display_interface_spi::SPIInterface;
 use hal::fugit::RateExtU32;
@@ -34,6 +32,8 @@ use hal::{
 use ili9486::{color::PixelFormat, io::shim::OutputOnlyIoPin};
 use ili9486::{Command, Commands, ILI9486};
 use pac::SPI1;
+
+pub mod keys;
 
 /// External high-speed crystal on the Raspberry Pi Pico 2 board is 12 MHz.
 /// Adjust if your board has a different frequency

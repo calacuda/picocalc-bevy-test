@@ -4,11 +4,7 @@
 extern crate alloc;
 
 use alloc::format;
-use bevy_app::{App, Startup, Update};
-use bevy_ecs::{
-    schedule::IntoSystemConfigs,
-    system::{NonSendMut, Res, ResMut, Resource},
-};
+use bevy::prelude::*;
 // use defmt_rtt as _;
 use embedded_alloc::LlffHeap as Heap;
 use embedded_graphics::{
