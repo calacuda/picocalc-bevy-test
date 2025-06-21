@@ -1,23 +1,48 @@
-[target.'cfg(all(target_arch = "arm", target_os = "none"))']
-# TODO(2) replace `$CHIP` with your chip's name (see `probe-rs chip list` output)
-runner = "probe-rs run --chip RP2040"
+# [target.'cfg(all(target_arch = "arm", target_os = "none"))']
+# # TODO(2) replace `$CHIP` with your chip's name (see `probe-rs chip list` output)
+# runner = "probe-rs run --chip RP2350"
+# rustflags = [
+#   "-C", "linker=flip-link",
+#   "-C", "link-arg=-Tlink.x",
+#   "-C", "link-arg=-Tdefmt.x",
+#   # This is needed if your flash or ram addresses are not aligned to 0x10000 in memory.x
+#   # See https://github.com/rust-embedded/cortex-m-quickstart/pull/95
+#   # "-C", "link-arg=--nmagic",
+# ]
+
+[target.thumbv8m.main-none-eabihf]
+# Pass some extra options to rustc, some of which get passed on to the linker.
+#
+# * linker argument --nmagic turns off page alignment of sections (which saves
+#   flash space)
+# * linker argument -Tlink.x tells the linker to use link.x as a linker script.
+#   This is usually provided by the cortex-m-rt crate, and by default the
+#   version in that crate will include a file called `memory.x` which describes
+#   the particular memory layout for your specific chip. 
+# * linker argument -Tdefmt.x also tells the linker to use `defmt.x` as a
+#   secondary linker script. This is required to make defmt_rtt work.
 rustflags = [
-  "-C", "linker=flip-link",
-  "-C", "link-arg=-Tlink.x",
-  "-C", "link-arg=-Tdefmt.x",
-  # This is needed if your flash or ram addresses are not aligned to 0x10000 in memory.x
-  # See https://github.com/rust-embedded/cortex-m-quickstart/pull/95
-  # "-C", "link-arg=--nmagic",
+    "-C", "link-arg=--nmagic",
+    "-C", "link-arg=-Tlink.x",
+    "-C", "link-arg=-Tdefmt.x",
+    "-C", "target-cpu=cortex-m33",
 ]
+
+# Use picotool for loading.
+#
+# Load an elf, skipping unchanged flash sectors, verify it, and execute it
+runner = "picotool load -u -v -x -t elf"
+
 
 [build]
 # TODO(3) Adjust the compilation target.
 # (`thumbv6m-*` is compatible with all ARM Cortex-M chips but using the right
 # target improves performance)
-target = "thumbv6m-none-eabi"    # Cortex-M0 and Cortex-M0+
+# target = "thumbv6m-none-eabi"    # Cortex-M0 and Cortex-M0+
 # target = "thumbv7m-none-eabi"    # Cortex-M3
 # target = "thumbv7em-none-eabi"   # Cortex-M4 and Cortex-M7 (no FPU)
 # target = "thumbv7em-none-eabihf" # Cortex-M4F and Cortex-M7F (with FPU)
+target = "thumbv8m.main-none-eabihf"
 
 [alias]
 rb = "run --bin"

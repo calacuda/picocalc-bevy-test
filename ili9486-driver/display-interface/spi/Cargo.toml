@@ -1,0 +1,25 @@
+[package]
+name = "display-interface-spi"
+description = "Generic SPI implementation for display interfaces"
+version = "0.4.0"
+authors = ["Daniel Egger <daniel@eggers-club.de>"]
+repository = "https://github.com/therealprof/display-interface"
+documentation = "https://docs.rs/display-interface-spi"
+categories = ["no-std"]
+keywords = ["graphics", "display", "embedded"]
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+exclude = [
+	".gitignore",
+]
+edition = "2024"
+
+[package.metadata.docs.rs]
+all-features = true
+
+[dependencies]
+embedded-hal = "1.0.0"
+# embedded_hal_0_2 = {package = "embedded-hal", version = "0.2.5", features = ["unproven"]}
+# display-interface = { git = "https://github.com/chrismoos/display-interface", branch = "rw-interface"}
+display-interface = { path = "../" }
+byte-slice-cast = { version = "0.3.5", default-features = false }
