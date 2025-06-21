@@ -6,6 +6,7 @@ extern crate alloc;
 use bevy::prelude::*;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use defmt_brtt as _;
+use fugit::Rate;
 use rp235x_hal::i2c::Controller;
 use rp235x_hal::pac::I2C1; // global logger
 
@@ -39,6 +40,7 @@ pub mod keys;
 /// Adjust if your board has a different frequency
 const XTAL_FREQ_HZ: u32 = 12_000_000u32;
 
+// Keyboard  I2C stuff
 pub const _REG_VER: u8 = 0x01; // fw version
 pub const _REG_CFG: u8 = 0x02; //  config
 pub const _REG_INT: u8 = 0x03; //  interrupt status
@@ -63,9 +65,9 @@ pub const _STATE_PRESS: u8 = 1;
 pub const _STATE_LONG_PRESS: u8 = 2;
 pub const _STATE_RELEASE: u8 = 3;
 
-pub struct PiPicoDemoPlugin;
+pub struct PicoCalcDefaultPlugins;
 
-impl Plugin for PiPicoDemoPlugin {
+impl Plugin for PicoCalcDefaultPlugins {
     fn build(&self, app: &mut App) {
         let mut pac = pac::Peripherals::take().unwrap();
         let mut watchdog = Watchdog::new(pac.WATCHDOG);
@@ -148,7 +150,7 @@ impl Plugin for PiPicoDemoPlugin {
 
         // SETUP KEEB
         let keeb_addr = 0x1f;
-        let i2c_freq = 200_000;
+        let i2c_freq = 200_000.Hz();
         let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio6.reconfigure();
         let scl_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio7.reconfigure();
 
@@ -159,7 +161,7 @@ impl Plugin for PiPicoDemoPlugin {
             pac.I2C1,
             sda_pin,
             scl_pin,
-            i2c_freq.Hz(),
+            i2c_freq,
             &mut pac.RESETS,
             &clocks.system_clock,
         );
@@ -174,17 +176,19 @@ impl Plugin for PiPicoDemoPlugin {
         .insert_non_send_resource(Keeb {
             i2c,
             adr: keeb_addr,
-            // is_shift: false,
-            // is_ctrl: false,
-            // is_alt: false,
+            speed: i2c_freq,
         })
         .insert_non_send_resource(Display { output: lcd_driver })
         .insert_non_send_resource(timer)
-        .insert_resource(KeyPresses::default());
+        // TODO: make a non_send_resource to hold the unused pins which are exposed on the side of
+        // the device, I2C, & UARTs.
+        // TODO: make a non_send_resource to hold the SD card
+        .insert_resource(KeyPresses::default())
+        .add_systems(Update, get_key_report);
     }
 }
 
-pub fn get_key_report(mut key_presses: ResMut<KeyPresses>, mut keyboard: NonSendMut<Keeb>) {
+fn get_key_report(mut key_presses: ResMut<KeyPresses>, mut keyboard: NonSendMut<Keeb>) {
     let num_keys = keyboard.key_count();
     key_presses.step();
 
@@ -200,23 +204,8 @@ pub fn get_key_report(mut key_presses: ResMut<KeyPresses>, mut keyboard: NonSend
             } else if state == _STATE_RELEASE {
                 key_presses.release_key(key);
             } else {
-                key_presses.press_key(key);
+                // key_presses.press_key(key);
             }
-
-            // if state == _STATE_PRESS || state == _STATE_LONG_PRESS {
-            //     match key {
-            //         0xa2 | 0xa3 => self.is_shift = true,
-            //         0xa5 => self.is_ctrl = true,
-            //         0xa1 => self.is_alt = true,
-            //     };
-            // } else {
-            //     match key {
-            //         0xa2 | 0xa3 => self.is_shift = false,
-            //         0xa5 => self.is_ctrl = false,
-            //         0xa1 => self.is_alt = false,
-            //         _ => {}
-            //     };
-            // }
         }
     }
 }
@@ -250,13 +239,17 @@ impl KeyPresses {
     pub fn press_key(&mut self, key: impl Into<u8>) {
         let key: u8 = key.into();
 
-        self.keys[key as usize] = KeyState::JustPressed;
+        if !self.is_pressed(key) {
+            self.keys[key as usize] = KeyState::JustPressed;
+        }
     }
 
     pub fn long_press_key(&mut self, key: impl Into<u8>) {
         let key: u8 = key.into();
 
-        self.keys[key as usize] = KeyState::JustLongPressed;
+        if !self.is_pressed(key) {
+            self.keys[key as usize] = KeyState::JustLongPressed;
+        }
     }
 
     pub fn release_key(&mut self, key: impl Into<u8>) {
@@ -270,7 +263,11 @@ impl KeyPresses {
             KeyState::JustPressed | KeyState::Pressed => {
                 self.keys[key as usize] = KeyState::JustReleased
             }
-            _ => self.keys[key as usize] = KeyState::Released,
+            _ => {
+                if !self.is_pressed(key) {
+                    self.keys[key as usize] = KeyState::Released
+                }
+            }
         }
     }
 
@@ -284,12 +281,49 @@ impl KeyPresses {
         });
     }
 
-    pub fn is_pressed(&self, key: impl Into<u8>) -> bool {
+    pub fn get_key_state(&self, key: impl Into<u8>) -> KeyState {
         let key: u8 = key.into();
-        let state = self.keys[key as usize];
+        self.keys[key as usize]
+    }
 
-        match state {
+    pub fn is_pressed(&self, key: impl Into<u8>) -> bool {
+        match self.get_key_state(key) {
             KeyState::JustLongPressed | KeyState::JustPressed | KeyState::Pressed => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_released(&self, key: impl Into<u8>) -> bool {
+        match self.get_key_state(key) {
+            KeyState::JustLongReleased | KeyState::JustReleased | KeyState::Released => true,
+            _ => false,
+        }
+    }
+
+    pub fn just_pressed(&self, key: impl Into<u8>) -> bool {
+        match self.get_key_state(key) {
+            KeyState::JustPressed => true,
+            _ => false,
+        }
+    }
+
+    pub fn just_long_pressed(&self, key: impl Into<u8>) -> bool {
+        match self.get_key_state(key) {
+            KeyState::JustLongPressed => true,
+            _ => false,
+        }
+    }
+
+    pub fn just_released(&self, key: impl Into<u8>) -> bool {
+        match self.get_key_state(key) {
+            KeyState::JustReleased => true,
+            _ => false,
+        }
+    }
+
+    pub fn just_long_released(&self, key: impl Into<u8>) -> bool {
+        match self.get_key_state(key) {
+            KeyState::JustLongReleased => true,
             _ => false,
         }
     }
@@ -304,10 +338,8 @@ pub struct Keeb {
         ),
         Controller,
     >,
-    adr: u8,
-    // is_shift: bool,
-    // is_ctrl: bool,
-    // is_alt: bool,
+    pub adr: u8,
+    pub speed: Rate<u32, 1, 1>,
 }
 
 impl Keeb {
@@ -328,38 +360,8 @@ impl Keeb {
     }
 
     pub fn key_event(&mut self) -> Option<[u8; 2]> {
-        // if self.key_count() == 0 {
-        // return None;
-        // } else {
         self.read_reg16(_REG_FIF)
-        // }
     }
-
-    // pub fn get_key_report(&mut self) {
-    //     let num_keys = self.key_count();
-    //
-    //     for _ in 0..num_keys {
-    //         if let Some(key_got) = self.key_event() {
-    //             let state = key_got[0];
-    //             let key = key_got[1];
-    //
-    //             // if state == _STATE_PRESS || state == _STATE_LONG_PRESS {
-    //             //     match key {
-    //             //         0xa2 | 0xa3 => self.is_shift = true,
-    //             //         0xa5 => self.is_ctrl = true,
-    //             //         0xa1 => self.is_alt = true,
-    //             //     };
-    //             // } else {
-    //             //     match key {
-    //             //         0xa2 | 0xa3 => self.is_shift = false,
-    //             //         0xa5 => self.is_ctrl = false,
-    //             //         0xa1 => self.is_alt = false,
-    //             //         _ => {}
-    //             //     };
-    //             // }
-    //         }
-    //     }
-    // }
 }
 
 pub struct Display {
@@ -379,19 +381,6 @@ pub struct Display {
         >,
         u8,
     >,
-    // pub spi: SPIInterface<
-    //     Spi<
-    //         Enabled,
-    //         SPI1,
-    //         (
-    //             Pin<Gpio11, FunctionSpi, PullDown>,
-    //             Pin<Gpio12, FunctionSpi, PullDown>,
-    //             Pin<Gpio10, FunctionSpi, PullDown>,
-    //         ),
-    //     >,
-    //     Pin<Gpio14, FunctionSioOutput, PullDown>,
-    //     Pin<Gpio13, FunctionSioOutput, PullDown>,
-    // >,
 }
 
 // same panicking *behavior* as `panic-probe` but doesn't print a panic message

@@ -14,7 +14,13 @@ use embedded_graphics::{
     text::Text,
 };
 use panic_probe as _;
-use picocalc_bevy_test::{get_key_report, Display, KeyPresses, PiPicoDemoPlugin};
+use picocalc_bevy_test::{
+    // get_key_report,
+    keys::KEY_ENTER,
+    Display,
+    KeyPresses,
+    PicoCalcDefaultPlugins,
+};
 use rp235x_hal as hal;
 
 // Tell the Boot ROM about our application
@@ -31,32 +37,34 @@ const BEVY: &[u8] = include_bytes!("../../assets/bevy_bird_dark.data");
 #[derive(Resource, Default)]
 pub struct Counter(pub u32);
 
+#[derive(Default, Resource, Deref, DerefMut)]
+pub struct DrawBird(pub bool);
+
 #[hal::entry]
 fn main() -> ! {
     init_heap();
 
     App::new()
-        .add_plugins(PiPicoDemoPlugin)
+        .add_plugins(PicoCalcDefaultPlugins)
         .init_resource::<Counter>()
+        .insert_resource(DrawBird(true))
         .add_systems(Startup, clear_display)
-        .add_systems(Update, (get_key_report, draw_scene, update_counter).chain())
+        .add_systems(Update, (set_draw_bird, draw_scene, update_counter).chain())
         .run();
 
     loop {}
 }
 
-// fn draw_scene(mut buffer: ResMut<DisplayBuffer>, counter: Res<Counter>) {
-fn draw_scene(
-    mut display: NonSendMut<Display>,
-    counter: Res<Counter>,
-    key_presses: Res<KeyPresses>,
-) {
-    // let style = MonoTextStyle::new(&FONT_6X10, RgbColor::GREEN);
+fn set_draw_bird(mut draw_bird: ResMut<DrawBird>, key_presses: Res<KeyPresses>) {
+    if key_presses.just_pressed(KEY_ENTER) {
+        **draw_bird = !**draw_bird;
+    }
+}
+
+fn draw_scene(mut display: NonSendMut<Display>, counter: Res<Counter>, draw_bird: Res<DrawBird>) {
     let Display { output: display } = display.as_mut();
     let mut style = MonoTextStyle::new(&FONT_6X12, Rgb565::GREEN);
     style.background_color = Some(Rgb565::BLACK);
-
-    // buffer.0.clear(RgbColor::BLACK).unwrap();
 
     Text::new("Bevy?!", Point::new(10, 30), style)
         .draw(display)
@@ -70,11 +78,13 @@ fn draw_scene(
         .draw(display)
         .unwrap();
 
+    let draw_bird = **draw_bird;
+
     for (index, value) in BEVY.iter().step_by(2).enumerate() {
         let x = index % 64;
         let y = (index - x) / 64;
 
-        if *value == 0 && !key_presses.is_pressed('q' as u8) {
+        if *value == 0 && draw_bird {
             Pixel(Point::new(32 + x as i32, 96 + y as i32), Rgb565::GREEN)
                 .draw(display)
                 .unwrap();
