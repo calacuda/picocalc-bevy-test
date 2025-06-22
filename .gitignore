@@ -1,3 +1,5 @@
 /target
 Cargo.lock
 /src/lib.bak.rs
+/embedded-gfx
+/stl_io
