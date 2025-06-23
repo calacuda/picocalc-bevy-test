@@ -52,9 +52,6 @@ pub struct PlayerLocation {
     pub looking_at: OPoint<f32, nalgebra::Const<3>>,
 }
 
-#[derive(Default, Clone, Copy, Resource, DerefMut, Deref)]
-pub struct ScreenUpdated(pub bool);
-
 #[derive(Resource)]
 pub struct DoubleBufferRes<RES>
 where
@@ -108,13 +105,8 @@ fn main() -> ! {
     App::new()
         .add_plugins(PicoCalcDefaultPlugins)
         .init_resource::<Counter>()
-        .init_resource::<ScreenUpdated>()
+        // .init_resource::<ScreenUpdated>()
         .insert_resource(GroundPlane(ground_vertices, ground_lines))
-        // .insert_resource(PlayerLocation {
-        //     pos,
-        //     looking_at: pos + nalgebra::Vector3::new((0.0).cos(), (0.0).sin(), 0.0_f32.sin()),
-        //     ..default()
-        // })
         .insert_resource(DoubleBufferRes::new(PlayerLocation {
             pos,
             looking_at: pos + nalgebra::Vector3::new((0.0).cos(), (0.0).sin(), 0.0_f32.sin()),
@@ -125,7 +117,6 @@ fn main() -> ! {
             Update,
             (
                 walk,
-                // clear_display.run_if(should_clear),
                 draw_scene,
                 update_counter,
                 /* render */
@@ -138,43 +129,33 @@ fn main() -> ! {
 }
 
 fn walk(
-    // mut player: ResMut<PlayerLocation>,
     mut player_buf: ResMut<DoubleBufferRes<PlayerLocation>>,
-    // mut player: ResMut<PlayerLocation>,
     keys: Res<KeyPresses>,
-    // mut updated: ResMut<ScreenUpdated>,
-    // time: Res<Time>,
     time: NonSend<PicoTimer>,
 ) {
     let player = player_buf.get_active_mut();
 
-    // let ft = 1.0 / time.delta_secs();
-    // let ft = 20;
     let ft = time.delta_millis();
-    let dt = ft as f32 / 1000.0; // 1_000_000.0;
+    let dt = ft as f32 / 1000.0;
     let walking_speed = 5.0 * dt;
     let turning_speed = 0.6 * dt;
 
     if keys.is_pressed(KEY_UP) {
         player.pos.x += player.dir.cos() * walking_speed;
         player.pos.z += player.dir.sin() * walking_speed;
-        // updated.0 = true;
     }
 
     if keys.is_pressed(KEY_DOWN) {
         player.pos.x -= player.dir.cos() * walking_speed;
         player.pos.z -= player.dir.sin() * walking_speed;
-        // updated.0 = true;
     }
 
     if keys.is_pressed(KEY_LEFT) {
         player.dir -= turning_speed;
-        // updated.0 = true;
     }
 
     if keys.is_pressed(KEY_RIGHT) {
         player.dir += turning_speed;
-        // updated.0 = true;
     }
 
     let new_look_at =
@@ -182,7 +163,6 @@ fn walk(
 
     if player.looking_at != new_look_at {
         player.looking_at = new_look_at;
-        // updated.0 = true;
     }
 }
 
@@ -248,19 +228,19 @@ fn draw_scene(
     );
 
     // Text::new(&message, Point::new(10, 220), style)
-    Text::new(&message, Point::new(10, 30), style)
+    Text::new(&message, Point::new(10, 20), style)
         .draw(display)
         .unwrap();
 
     // Text::new("Heap:", Point::new(10, 240), style)
-    Text::new("Heap:", Point::new(10, 50), style)
+    Text::new("Heap:", Point::new(10, 35), style)
         .draw(display)
         .unwrap();
 
     let message = format!("{} / {} KiB", HEAP.free() / 1024, HEAP_SIZE / 1024);
 
     // Text::new(&message, Point::new(10, 260), style)
-    Text::new(&message, Point::new(10, 70), style)
+    Text::new(&message, Point::new(10, 45), style)
         .draw(display)
         .unwrap();
 
@@ -298,38 +278,16 @@ fn draw_scene(
     player_buf.switch();
 }
 
-// fn render(mut display: NonSendMut<Display>, mut fb: ResMut<DoubleFrameBuffer>) {
-//     let Display { output: display } = display.as_mut();
-//     let fb = fb.as_mut();
-//
-//     _ = fb.get().into_iter().draw(display);
-//
-//     fb.switch_buffer()
-// }
-
-fn clear_display(
-    mut display: NonSendMut<Display>,
-    // mut fb: ResMut<DoubleFrameBuffer>,
-    // mut updated: ResMut<ScreenUpdated>,
-) {
-    let Display { output } = display.as_mut();
-    _ = output.clear(Rgb565::BLACK);
-    // _ = output.reset();
-    // _ = fb.clear(Rgb565::BLACK);
-    // updated.0 = false;
+fn render(mut display: NonSendMut<Display>) {
+    // TODO: "unrender" all renderables if changed
+    // TODO: "rerender" all renderables if changed
+    // TODO: call DoubleBufferRes::switch() on ALL renderables
 }
 
-// fn reset(
-//     mut rst: NonSendMut<OutputOnlyIoPin<Pin<Gpio15, FunctionSioOutput, PullDown>>>,
-//     mut delay: NonSendMut<hal::Timer<CopyableTimer0>>,
-// ) {
-//     use embedded_hal::delay::DelayNs;
-//     let rst = rst.as_mut().into_output();
-//     _ = rst.set_low();
-//     delay.as_mut().delay_us(20);
-//     _ = rst.set_high();
-//     // delay.delay_us(120_000);
-// }
+fn clear_display(mut display: NonSendMut<Display>) {
+    let Display { output } = display.as_mut();
+    _ = output.clear(Rgb565::BLACK);
+}
 
 fn update_counter(mut counter: ResMut<Counter>) {
     counter.0 += 1;
