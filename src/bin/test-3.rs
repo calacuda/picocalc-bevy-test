@@ -304,7 +304,7 @@ fn make_xz_plane() -> (Vec<[f32; 3]>, Vec<[usize; 2]>) {
 fn draw_fps(
     counter: Res<Counter>,
     time: NonSend<PicoTimer>,
-    mut fps: Query<&mut TextComponent, With<FpsText>>,
+    mut fps: Query<&mut TextComponent, (With<FpsText>, Without<HeapText>)>,
 ) {
     let message = format!(
         "{} | {:.2}: fps",
@@ -316,7 +316,7 @@ fn draw_fps(
         .map(|ref mut counter| counter.set_text(&message));
 }
 
-fn draw_heap(mut heap: Query<&mut TextComponent, With<HeapText>>) {
+fn draw_heap(mut heap: Query<&mut TextComponent, (With<HeapText>, Without<FpsText>)>) {
     let message = format!("{} / {} KiB", HEAP.free() / 1024, HEAP_SIZE / 1024);
     _ = heap
         .single_mut()
@@ -335,7 +335,6 @@ fn render(
 
     let setup_cam = |player: &PlayerLocation, camera: &mut ResMut<Engine3d>| {
         camera.engine.camera.set_position(player.pos);
-
         let lookat = player.looking_at;
         camera.engine.camera.set_target(lookat);
     };
