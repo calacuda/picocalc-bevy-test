@@ -8,9 +8,11 @@ use bevy::prelude::*;
 // use defmt_rtt as _;
 use embedded_alloc::LlffHeap as Heap;
 use embedded_gfx::{
+    // camera::Camera,
     draw::draw,
     mesh::{Geometry, K3dMesh, RenderMode},
-    K3dengine, PI,
+    K3dengine,
+    PI,
 };
 use embedded_graphics::{
     mono_font::{ascii::FONT_6X12, MonoTextStyle},
@@ -56,21 +58,90 @@ pub struct PlayerLocation {
 pub struct Renderable;
 
 #[derive(Component)]
-#[require(Renderable)]
+// #[require(Renderable)]
 pub struct TextComponent {
     pub text: String,
     pub point: Point,
     // pub style: MonoTextStyle,
 }
 
+impl TextComponent {
+    pub fn set_text(&mut self, text: &str) {
+        self.text = text.into();
+    }
+}
+
 #[derive(Component)]
-#[require(Renderable)]
-pub struct Mesh3D<'a> {
-    pub mesh: K3dMesh<'a>,
+// #[require(Renderable)]
+pub struct Mesh3D {
+    // pub mesh: K3dMesh,
+    pub vertices: Vec<[f32; 3]>,
+    pub lines: Vec<[usize; 2]>,
+    pub faces: Vec<[usize; 3]>,
+    pub render_mode: RenderMode,
+    pub scale: f32,
+    pub color: Rgb565,
+}
+
+impl Default for Mesh3D {
+    fn default() -> Self {
+        Self {
+            vertices: Vec::new(),
+            lines: Vec::new(),
+            faces: Vec::new(),
+            render_mode: RenderMode::Lines,
+            scale: 1.0,
+            color: Rgb565::GREEN,
+        }
+    }
 }
 
 #[derive(Resource)]
-pub struct Engine3d(pub K3dengine);
+pub struct Engine3d {
+    pub engine: K3dengine,
+    // dir: nalgebra::Matrix<f32, nalgebra::Const<3>, nalgebra::Const<1>, ArrayStorage<f32, 3, 1>>,
+    // pos: Point3<f32>,
+    pub changed: bool,
+}
+
+impl Engine3d {
+    pub fn new(w: u16, h: u16) -> Self {
+        let mut engine = K3dengine::new(w, h);
+        // let dir = engine.camera.get_direction();
+        // let pos = engine.camera.position;
+        // let target = pos;
+        // let fovy = PI / 4.0;
+        engine.camera.set_fovy(PI / 4.0);
+
+        Self {
+            engine,
+            // dir,
+            // pos,
+            changed: true,
+        }
+    }
+
+    // pub fn set_fovy(&mut self, fovy: f32) {
+    //     self.engine.camera.set_fovy(fovy);
+    //     self.changed = true;
+    // }
+    //
+    // pub fn set_position(&mut self, pos: Point3<f32>) {
+    //     self.engine.camera.set_position(pos);
+    //     self.changed = true;
+    // }
+    //
+    // pub fn set_target(&mut self, target: Point3<f32>) {
+    //     self.engine.camera.set_target(target);
+    //     self.changed = true;
+    // }
+
+    // pub fn cam_changed(&self) -> bool {
+    // self.dir != self.engine.camera.get_direction()
+    //     || self.pos != self.engine.camera.position
+    //     || self.changed
+    // }
+}
 
 #[derive(Resource)]
 pub struct DoubleBufferRes<RES>
@@ -122,36 +193,71 @@ where
     }
 }
 
+#[derive(Component)]
+pub struct FpsText;
+
+#[derive(Component)]
+pub struct HeapText;
+
 #[hal::entry]
 fn main() -> ! {
     init_heap();
 
-    let (ground_vertices, ground_lines) = make_xz_plane();
+    // let (ground_vertices, ground_lines) = make_xz_plane();
     let pos = Point3::new(0.0, 2.0, 0.0);
 
     App::new()
+        // .add_plugins(MinimalPlugins)
         .add_plugins(PicoCalcDefaultPlugins)
         .init_resource::<Counter>()
-        .insert_resource(GroundPlane(ground_vertices, ground_lines))
+        // .insert_resource(GroundPlane(ground_vertices, ground_lines))
         .insert_resource(DoubleBufferRes::new(PlayerLocation {
             pos,
             looking_at: pos + nalgebra::Vector3::new((0.0).cos(), (0.0).sin(), 0.0_f32.sin()),
             ..default()
         }))
-        .add_systems(Startup, clear_display)
-        .add_systems(
-            Update,
-            (
-                walk,
-                draw_scene,
-                update_counter,
-                /* render */
-            )
-                .chain(),
-        )
+        .insert_resource(Engine3d::new(320, 320))
+        .add_systems(Startup, (clear_display, setup))
+        .add_systems(Update, (walk, draw_fps, draw_heap, update_counter).chain())
+        .add_systems(PostUpdate, render)
         .run();
 
     loop {}
+}
+
+fn setup(mut cmds: Commands) {
+    cmds.spawn(TextComponent {
+        text: "Frames Rendered:".into(),
+        point: Point::new(10, 10),
+    });
+    cmds.spawn((
+        TextComponent {
+            text: "".into(),
+            point: Point::new(10, 20),
+        },
+        FpsText,
+    ));
+    cmds.spawn(TextComponent {
+        text: "Heap:".into(),
+        point: Point::new(10, 35),
+    });
+    cmds.spawn((
+        TextComponent {
+            text: "".into(),
+            point: Point::new(10, 45),
+        },
+        HeapText,
+    ));
+
+    let (vertices, lines) = make_xz_plane();
+
+    cmds.spawn(Mesh3D {
+        vertices,
+        lines,
+        scale: 2.0,
+        color: Rgb565::new(0, 127, 255),
+        ..default()
+    });
 }
 
 fn walk(
@@ -192,6 +298,16 @@ fn walk(
     }
 }
 
+// fn set_camera(mut engine: ResMut<Engine3d>, player_buf: Res<DoubleBufferRes<PlayerLocation>>) {
+//     if player_buf.was_updated() {
+//         engine.set_position(player_buf.get_active().pos);
+//         engine.set_fovy(PI / 4.0);
+//
+//         let lookat = player.looking_at;
+//         engine.camera.set_target(lookat);
+//     }
+// }
+
 fn make_xz_plane() -> (Vec<[f32; 3]>, Vec<[usize; 2]>) {
     let step = 1.0;
     let nsteps = 32;
@@ -230,83 +346,104 @@ fn make_xz_plane() -> (Vec<[f32; 3]>, Vec<[usize; 2]>) {
     (vertices, lines)
 }
 
-fn draw_scene(
-    mut display: NonSendMut<Display>,
+fn draw_fps(
+    // mut display: NonSendMut<Display>,
     counter: Res<Counter>,
-    ground: Res<GroundPlane>,
-    mut player_buf: ResMut<DoubleBufferRes<PlayerLocation>>,
+    // ground: Res<GroundPlane>,
+    // mut player_buf: ResMut<DoubleBufferRes<PlayerLocation>>,
     time: NonSend<PicoTimer>,
+    mut fps: Query<&mut TextComponent, With<FpsText>>,
+    // mut heap: Query<&mut TextComponent, With<HeapText>>,
 ) {
-    let Display { output: display } = display.as_mut();
-    let (ground_vertices, ground_lines) = (&ground.0, &ground.1);
-    let mut style = MonoTextStyle::new(&FONT_6X12, Rgb565::GREEN);
-    style.background_color = Some(Rgb565::BLACK);
-
-    // Text::new("Frames Rendered:", Point::new(10, 200), style)
-    Text::new("Frames Rendered:", Point::new(10, 10), style)
-        .draw(display)
-        .unwrap();
-
     let message = format!(
         "{} | {:.2}: fps",
         counter.0,
         counter.0 as f32 / time.get_on_time_secs()
     );
+    _ = fps
+        .single_mut()
+        .map(|ref mut counter| counter.set_text(&message));
 
-    // Text::new(&message, Point::new(10, 220), style)
-    Text::new(&message, Point::new(10, 20), style)
-        .draw(display)
-        .unwrap();
-
-    // Text::new("Heap:", Point::new(10, 240), style)
-    Text::new("Heap:", Point::new(10, 35), style)
-        .draw(display)
-        .unwrap();
-
-    let message = format!("{} / {} KiB", HEAP.free() / 1024, HEAP_SIZE / 1024);
-
-    // Text::new(&message, Point::new(10, 260), style)
-    Text::new(&message, Point::new(10, 45), style)
-        .draw(display)
-        .unwrap();
-
-    let mut ground = K3dMesh::new(Geometry {
-        vertices: ground_vertices,
-        faces: &[],
-        colors: &[],
-        lines: ground_lines,
-        normals: &[],
-    });
-    ground.set_render_mode(RenderMode::Lines);
-    ground.set_scale(2.0);
-    // ground.set_color(Rgb565::new(0, 127, 255));
-    let mut engine = K3dengine::new(320, 320);
-
-    let mut draw_3d = |player: &PlayerLocation, color| {
-        ground.set_color(color);
-
-        engine.camera.set_position(player.pos);
-        engine.camera.set_fovy(PI / 4.0);
-
-        let lookat = player.looking_at;
-        engine.camera.set_target(lookat);
-
-        engine.render([&ground], |p| draw(p, display))
-    };
-
-    if player_buf.was_updated() {
-        draw_3d(player_buf.get_inactive(), Rgb565::BLACK);
-        draw_3d(player_buf.get_active(), Rgb565::new(0, 127, 255));
-        // **updated = false;
-    }
-
-    player_buf.switch();
+    // let message = format!("{} / {} KiB", HEAP.free() / 1024, HEAP_SIZE / 1024);
+    // _ = heap
+    //     .single_mut()
+    //     .map(|ref mut counter| counter.set_text(&message));
 }
 
-fn render(mut display: NonSendMut<Display>) {
-    // TODO: "unrender" all renderables if changed
-    // TODO: "rerender" all renderables if changed
-    // TODO: call DoubleBufferRes::switch() on ALL renderables
+fn draw_heap(mut heap: Query<&mut TextComponent, With<HeapText>>) {
+    let message = format!("{} / {} KiB", HEAP.free() / 1024, HEAP_SIZE / 1024);
+    _ = heap
+        .single_mut()
+        .map(|ref mut counter| counter.set_text(&message));
+}
+
+fn render(
+    mut display: NonSendMut<Display>,
+    mut camera: ResMut<Engine3d>,
+    mut player_buf: ResMut<DoubleBufferRes<PlayerLocation>>,
+    text_comps: Query<&TextComponent, Changed<TextComponent>>,
+    mesh_comps: Query<Ref<Mesh3D>>,
+) {
+    let Display { output: display } = display.as_mut();
+    let cam_changed = camera.changed || player_buf.was_updated();
+
+    let setup_cam = |player: &PlayerLocation, camera: &mut ResMut<Engine3d>| {
+        camera.engine.camera.set_position(player.pos);
+
+        let lookat = player.looking_at;
+        camera.engine.camera.set_target(lookat);
+    };
+
+    if cam_changed {
+        setup_cam(player_buf.get_inactive(), &mut camera);
+        // "unrender" all meshes if changed or camera changed
+        for mesh in mesh_comps {
+            let mut renderable = K3dMesh::new(Geometry {
+                vertices: &mesh.vertices,
+                faces: &[],
+                colors: &[],
+                lines: &mesh.lines,
+                normals: &[],
+            });
+            renderable.set_render_mode(mesh.render_mode);
+            renderable.set_scale(mesh.scale);
+            renderable.set_color(Rgb565::BLACK);
+            camera.engine.render([&renderable], |p| draw(p, display))
+        }
+    }
+
+    // "rerender" all renderables if changed or camera changed
+
+    setup_cam(player_buf.get_active(), &mut camera);
+
+    for mesh in mesh_comps {
+        if mesh.is_changed() || cam_changed {
+            let mut renderable = K3dMesh::new(Geometry {
+                vertices: &mesh.vertices,
+                faces: &[],
+                colors: &[],
+                lines: &mesh.lines,
+                normals: &[],
+            });
+            renderable.set_render_mode(mesh.render_mode);
+            renderable.set_scale(mesh.scale);
+            renderable.set_color(mesh.color);
+            camera.engine.render([&renderable], |p| draw(p, display))
+        }
+    }
+
+    let mut style = MonoTextStyle::new(&FONT_6X12, Rgb565::GREEN);
+    style.background_color = Some(Rgb565::BLACK);
+
+    for text in text_comps {
+        Text::new(&text.text, text.point, style)
+            .draw(display)
+            .unwrap();
+    }
+
+    // call DoubleBufferRes::switch()
+    player_buf.switch();
+    camera.changed = false;
 }
 
 fn clear_display(mut display: NonSendMut<Display>) {
@@ -331,7 +468,7 @@ fn init_heap() {
 pub static PICOTOOL_ENTRIES: [hal::binary_info::EntryAddr; 5] = [
     hal::binary_info::rp_cargo_bin_name!(),
     hal::binary_info::rp_cargo_version!(),
-    hal::binary_info::rp_program_description!(c"Blinky Example"),
+    hal::binary_info::rp_program_description!(c"Bevy test-3"),
     hal::binary_info::rp_cargo_homepage_url!(),
     hal::binary_info::rp_program_build_attribute!(),
 ];

@@ -38,8 +38,8 @@ embedded-hal = { version = "1.0.0" }
 embedded-alloc = "0.6.0"
 embedded-graphics = { version = "0.8", features = ["defmt"] }
 portable-atomic = { version = "1.9.0", features = ["critical-section"] }
-# bevy = { version = "0.16", default-features = false, features = [ "critical-section", "default_no_std" ] }
-bevy = { git = "https://github.com/bevyengine/bevy", rev = "0518eda", default-features = false, features = [ "critical-section", "default_no_std" ] }
+bevy = { version = "0.16", default-features = false, features = [ "critical-section", "default_no_std" ] }
+# bevy = { git = "https://github.com/bevyengine/bevy", rev = "0518eda", default-features = false, features = [ "critical-section", "default_no_std" ] }
 defmt-rtt = "1.0.0"
 # embedded-hal-bus = "0.2.0"
 ili9486-driver = { path = "./ili9486-driver/" }
