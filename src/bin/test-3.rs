@@ -62,7 +62,6 @@ pub struct Renderable;
 pub struct TextComponent {
     pub text: String,
     pub point: Point,
-    // pub style: MonoTextStyle,
 }
 
 impl TextComponent {
@@ -74,7 +73,6 @@ impl TextComponent {
 #[derive(Component)]
 // #[require(Renderable)]
 pub struct Mesh3D {
-    // pub mesh: K3dMesh,
     pub vertices: Vec<[f32; 3]>,
     pub lines: Vec<[usize; 2]>,
     pub faces: Vec<[usize; 3]>,
@@ -99,48 +97,19 @@ impl Default for Mesh3D {
 #[derive(Resource)]
 pub struct Engine3d {
     pub engine: K3dengine,
-    // dir: nalgebra::Matrix<f32, nalgebra::Const<3>, nalgebra::Const<1>, ArrayStorage<f32, 3, 1>>,
-    // pos: Point3<f32>,
     pub changed: bool,
 }
 
 impl Engine3d {
     pub fn new(w: u16, h: u16) -> Self {
         let mut engine = K3dengine::new(w, h);
-        // let dir = engine.camera.get_direction();
-        // let pos = engine.camera.position;
-        // let target = pos;
-        // let fovy = PI / 4.0;
         engine.camera.set_fovy(PI / 4.0);
 
         Self {
             engine,
-            // dir,
-            // pos,
             changed: true,
         }
     }
-
-    // pub fn set_fovy(&mut self, fovy: f32) {
-    //     self.engine.camera.set_fovy(fovy);
-    //     self.changed = true;
-    // }
-    //
-    // pub fn set_position(&mut self, pos: Point3<f32>) {
-    //     self.engine.camera.set_position(pos);
-    //     self.changed = true;
-    // }
-    //
-    // pub fn set_target(&mut self, target: Point3<f32>) {
-    //     self.engine.camera.set_target(target);
-    //     self.changed = true;
-    // }
-
-    // pub fn cam_changed(&self) -> bool {
-    // self.dir != self.engine.camera.get_direction()
-    //     || self.pos != self.engine.camera.position
-    //     || self.changed
-    // }
 }
 
 #[derive(Resource)]
@@ -203,14 +172,11 @@ pub struct HeapText;
 fn main() -> ! {
     init_heap();
 
-    // let (ground_vertices, ground_lines) = make_xz_plane();
     let pos = Point3::new(0.0, 2.0, 0.0);
 
     App::new()
-        // .add_plugins(MinimalPlugins)
         .add_plugins(PicoCalcDefaultPlugins)
         .init_resource::<Counter>()
-        // .insert_resource(GroundPlane(ground_vertices, ground_lines))
         .insert_resource(DoubleBufferRes::new(PlayerLocation {
             pos,
             looking_at: pos + nalgebra::Vector3::new((0.0).cos(), (0.0).sin(), 0.0_f32.sin()),
@@ -298,16 +264,6 @@ fn walk(
     }
 }
 
-// fn set_camera(mut engine: ResMut<Engine3d>, player_buf: Res<DoubleBufferRes<PlayerLocation>>) {
-//     if player_buf.was_updated() {
-//         engine.set_position(player_buf.get_active().pos);
-//         engine.set_fovy(PI / 4.0);
-//
-//         let lookat = player.looking_at;
-//         engine.camera.set_target(lookat);
-//     }
-// }
-
 fn make_xz_plane() -> (Vec<[f32; 3]>, Vec<[usize; 2]>) {
     let step = 1.0;
     let nsteps = 32;
@@ -331,7 +287,6 @@ fn make_xz_plane() -> (Vec<[f32; 3]>, Vec<[usize; 2]>) {
             let p1 = i * nsteps + j;
             let p2 = p1 + 1;
             let p3 = p1 + nsteps;
-            // let p4 = p3 + (nsteps - 1);
 
             if p1 < vertices.len() && p2 < vertices.len() && p2 % nsteps != 0 {
                 lines.push([p1, p2]);
@@ -347,13 +302,9 @@ fn make_xz_plane() -> (Vec<[f32; 3]>, Vec<[usize; 2]>) {
 }
 
 fn draw_fps(
-    // mut display: NonSendMut<Display>,
     counter: Res<Counter>,
-    // ground: Res<GroundPlane>,
-    // mut player_buf: ResMut<DoubleBufferRes<PlayerLocation>>,
     time: NonSend<PicoTimer>,
     mut fps: Query<&mut TextComponent, With<FpsText>>,
-    // mut heap: Query<&mut TextComponent, With<HeapText>>,
 ) {
     let message = format!(
         "{} | {:.2}: fps",
@@ -363,11 +314,6 @@ fn draw_fps(
     _ = fps
         .single_mut()
         .map(|ref mut counter| counter.set_text(&message));
-
-    // let message = format!("{} / {} KiB", HEAP.free() / 1024, HEAP_SIZE / 1024);
-    // _ = heap
-    //     .single_mut()
-    //     .map(|ref mut counter| counter.set_text(&message));
 }
 
 fn draw_heap(mut heap: Query<&mut TextComponent, With<HeapText>>) {

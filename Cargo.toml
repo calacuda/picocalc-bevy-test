@@ -22,11 +22,8 @@ rp235x-hal = { version = "0.3.0", features = ["binary-info", "critical-section-i
 # rtic = "2.1.1"
 # TODO(4) Select the correct rtic backend
 # rtic = { version = "2.1.3", features = [ "thumbv6-backend" ] }
-# wmidi = { version = "4.0.10", default-features = false }
-# wt-synth-lib = { git = "https://github.com/calacuda/wt-synth-lib", version = "0.1.0" }
 # TODO(5) Add hal as dependency
 # some-hal = "1.2.3"
-
 # TODO add a monotonic if you use scheduling
 # rtic-monotonics = { version = "1.0.0", features = [ "cortex-m-systick" ]}
 fugit = "0.3.6"
