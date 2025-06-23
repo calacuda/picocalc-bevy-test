@@ -26,7 +26,7 @@ use nalgebra::Point3;
 use nalgebra::{ComplexField, OPoint};
 use panic_probe as _;
 use picocalc_bevy_test::{
-    keys::{KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_UP},
+    keys::{KEY_DOWN, KEY_ENTER, KEY_LEFT, KEY_RIGHT, KEY_UP},
     Display, KeyPresses, PicoCalcDefaultPlugins, PicoTimer,
 };
 use rp235x_hal::{self as hal};
@@ -162,14 +162,46 @@ where
     }
 }
 
-#[derive(Component)]
-pub struct Invisible;
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Component)]
+pub struct Visible {
+    is_visible: bool,
+    updated: bool,
+}
+
+impl Visible {
+    pub fn new(is_visible: bool) -> Self {
+        Self {
+            is_visible,
+            updated: true,
+        }
+    }
+
+    pub fn set_visible(&mut self, is_seen: bool) {
+        self.is_visible = is_seen;
+        self.updated = true;
+    }
+
+    pub fn should_show(&self) -> bool {
+        self.is_visible
+    }
+
+    pub fn should_rm(&self) -> bool {
+        self.is_visible || (!self.is_visible && self.updated)
+    }
+
+    fn was_rendered(&mut self) {
+        self.updated = false;
+    }
+}
 
 #[derive(Component)]
 pub struct FpsText;
 
 #[derive(Component)]
 pub struct HeapText;
+
+#[derive(Component)]
+pub struct HeapHud;
 
 #[hal::entry]
 fn main() -> ! {
@@ -189,7 +221,11 @@ fn main() -> ! {
         .add_systems(Startup, (clear_display, setup))
         .add_systems(
             Update,
-            (walk, (draw_fps, draw_heap, update_counter).chain()),
+            (
+                walk,
+                toggle_heap_hud,
+                (draw_fps, draw_heap, update_counter).chain(),
+            ),
         )
         .add_systems(PostUpdate, render)
         .run();
@@ -246,16 +282,22 @@ fn setup(mut cmds: Commands) {
         },
         FpsText,
     ));
-    cmds.spawn(TextComponent {
-        text: "Free Heap Mem:".into(),
-        point: Point::new(10, 45),
-    });
+    cmds.spawn((
+        TextComponent {
+            text: "Free Heap Mem:".into(),
+            point: Point::new(10, 45),
+        },
+        Visible::new(true),
+        HeapHud,
+    ));
     cmds.spawn((
         TextComponent {
             text: "".into(),
             point: Point::new(10, 55),
         },
+        Visible::new(true),
         HeapText,
+        HeapHud,
     ));
 
     let (vertices, lines) = make_xz_plane();
@@ -267,6 +309,31 @@ fn setup(mut cmds: Commands) {
         color: Rgb565::new(0, 127, 255),
         ..default()
     });
+}
+
+fn toggle_heap_hud(keys: Res<KeyPresses>, heap_hud: Query<&mut Visible>) {
+    if keys.just_pressed(KEY_ENTER) {
+        let mut get_visible = {
+            let mut visible = None;
+
+            move |vis: &mut Visible| -> bool {
+                if let Some(visible) = visible {
+                    visible
+                } else {
+                    let tmp_vis = !vis.should_show();
+                    visible.replace(tmp_vis);
+                    tmp_vis
+                }
+            }
+        };
+
+        for ref mut vis in heap_hud {
+            let visible = get_visible(vis);
+
+            vis.set_visible(visible);
+            // vis.was_rendered();
+        }
+    }
 }
 
 fn walk(
@@ -335,8 +402,14 @@ fn render(
     mut display: NonSendMut<Display>,
     mut camera: ResMut<Engine3d>,
     mut player_buf: ResMut<DoubleBufferRes<PlayerLocation>>,
-    text_comps: Query<&TextComponent, (Changed<TextComponent>, Without<Invisible>)>,
-    mesh_comps: Query<Ref<Mesh3D>, Without<Invisible>>,
+    text_comps: Query<
+        (&TextComponent, Option<&mut Visible>),
+        (
+            Or<(Changed<TextComponent>, Changed<Visible>)>,
+            Without<Mesh3D>,
+        ),
+    >,
+    mesh_comps: Query<(Ref<Mesh3D>, Option<&mut Visible>), Without<TextComponent>>,
 ) {
     let Display { output: display } = display.as_mut();
     let cam_changed = camera.changed || player_buf.was_updated();
@@ -347,10 +420,12 @@ fn render(
         camera.engine.camera.set_target(lookat);
     };
 
-    if cam_changed {
-        setup_cam(player_buf.get_inactive(), &mut camera);
-        // "unrender" all meshes if changed or camera changed
-        for mesh in mesh_comps {
+    // let meshes = mesh_comps.iter_mut();
+
+    for (mesh, vis) in mesh_comps {
+        if cam_changed && (vis.is_none() || vis.as_ref().is_some_and(|vis| vis.should_rm())) {
+            setup_cam(player_buf.get_inactive(), &mut camera);
+            // "unrender" all meshes if changed or camera changed
             let mut renderable = K3dMesh::new(Geometry {
                 vertices: &mesh.vertices,
                 faces: &[],
@@ -363,14 +438,16 @@ fn render(
             renderable.set_color(Rgb565::BLACK);
             camera.engine.render([&renderable], |p| draw(p, display))
         }
-    }
+        // }
 
-    // "rerender" all renderables if changed or camera changed
+        // "rerender" a ll renderables if changed or camera changed
 
-    setup_cam(player_buf.get_active(), &mut camera);
+        // for (mesh, vis) in meshes {
+        if (vis.is_none() || vis.as_ref().is_some_and(|vis| vis.should_show()))
+            && (mesh.is_changed() || cam_changed)
+        {
+            setup_cam(player_buf.get_active(), &mut camera);
 
-    for mesh in mesh_comps {
-        if mesh.is_changed() || cam_changed {
             let mut renderable = K3dMesh::new(Geometry {
                 vertices: &mesh.vertices,
                 faces: &[],
@@ -382,16 +459,31 @@ fn render(
             renderable.set_scale(mesh.scale);
             renderable.set_color(mesh.color);
             camera.engine.render([&renderable], |p| draw(p, display))
+            // }
         }
+
+        vis.map(|ref mut vis| vis.was_rendered());
     }
 
     let mut style = MonoTextStyle::new(&FONT_6X12, Rgb565::GREEN);
     style.background_color = Some(Rgb565::BLACK);
 
-    for text in text_comps {
-        Text::new(&text.text, text.point, style)
-            .draw(display)
-            .unwrap();
+    for (text, vis) in text_comps {
+        let point = text.point;
+
+        if vis.is_none() || vis.as_ref().is_some_and(|vis| vis.should_show()) {
+            let text = text.text.clone();
+            Text::new(&text, point, style).draw(display).unwrap();
+        } else if vis.as_ref().is_some_and(|vis| vis.should_rm()) {
+            let text: String = text
+                .text
+                .chars()
+                .map(|c| if !c.is_whitespace() { ' ' } else { c })
+                .collect();
+            Text::new(&text, point, style).draw(display).unwrap();
+        }
+
+        vis.map(|ref mut vis| vis.was_rendered());
     }
 
     // call DoubleBufferRes::switch()
