@@ -52,6 +52,26 @@ pub struct PlayerLocation {
     pub looking_at: OPoint<f32, nalgebra::Const<3>>,
 }
 
+#[derive(Component, Default)]
+pub struct Renderable;
+
+#[derive(Component)]
+#[require(Renderable)]
+pub struct TextComponent {
+    pub text: String,
+    pub point: Point,
+    // pub style: MonoTextStyle,
+}
+
+#[derive(Component)]
+#[require(Renderable)]
+pub struct Mesh3D<'a> {
+    pub mesh: K3dMesh<'a>,
+}
+
+#[derive(Resource)]
+pub struct Engine3d(pub K3dengine);
+
 #[derive(Resource)]
 pub struct DoubleBufferRes<RES>
 where
@@ -59,6 +79,7 @@ where
 {
     pub res: [RES; 2],
     i: usize,
+    new: bool,
 }
 
 impl<RES> DoubleBufferRes<RES>
@@ -68,7 +89,11 @@ where
     pub fn new(res: RES) -> Self {
         let res = [res.clone(), res.clone()];
 
-        Self { res, i: 0 }
+        Self {
+            res,
+            i: 0,
+            new: true,
+        }
     }
 
     pub fn get_active(&mut self) -> &RES {
@@ -88,10 +113,12 @@ where
 
         self.i += 1;
         self.i %= 2;
+
+        self.new = false;
     }
 
     pub fn was_updated(&self) -> bool {
-        self.res[0] != self.res[1]
+        self.res[0] != self.res[1] || self.new
     }
 }
 
@@ -105,7 +132,6 @@ fn main() -> ! {
     App::new()
         .add_plugins(PicoCalcDefaultPlugins)
         .init_resource::<Counter>()
-        // .init_resource::<ScreenUpdated>()
         .insert_resource(GroundPlane(ground_vertices, ground_lines))
         .insert_resource(DoubleBufferRes::new(PlayerLocation {
             pos,
@@ -270,10 +296,9 @@ fn draw_scene(
 
     if player_buf.was_updated() {
         draw_3d(player_buf.get_inactive(), Rgb565::BLACK);
+        draw_3d(player_buf.get_active(), Rgb565::new(0, 127, 255));
         // **updated = false;
     }
-
-    draw_3d(player_buf.get_active(), Rgb565::new(0, 127, 255));
 
     player_buf.switch();
 }
