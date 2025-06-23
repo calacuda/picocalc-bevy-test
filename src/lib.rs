@@ -194,8 +194,9 @@ impl Plugin for PicoCalcDefaultPlugins {
         // TODO: make a non_send_resource to hold the SD card
         .insert_resource(KeyPresses::default())
         // .insert_resource(DoubleFrameBuffer::new(320, 320))
-        .add_systems(Startup, tick_timer)
-        .add_systems(Update, (tick_timer, get_key_report));
+        .add_systems(Startup, (start_timer, tick_timer))
+        .add_systems(Update, get_key_report)
+        .add_systems(PostUpdate, tick_timer);
     }
 }
 
@@ -221,6 +222,10 @@ fn get_key_report(mut key_presses: ResMut<KeyPresses>, mut keyboard: NonSendMut<
     }
 }
 
+fn start_timer(mut timer: NonSendMut<PicoTimer>) {
+    timer.start();
+}
+
 fn tick_timer(mut timer: NonSendMut<PicoTimer>) {
     timer.tick();
 }
@@ -233,9 +238,7 @@ pub struct PicoTimer {
 }
 
 impl PicoTimer {
-    pub fn new(mut powman: Powman) -> Self {
-        powman.aot_start();
-
+    pub fn new(powman: Powman) -> Self {
         let this_tick_time = powman.aot_get_time();
 
         Self {
@@ -243,6 +246,10 @@ impl PicoTimer {
             last_tick_time: 0,
             this_tick_time,
         }
+    }
+
+    fn start(&mut self) {
+        self.powman.aot_start();
     }
 
     fn tick(&mut self) {
@@ -256,7 +263,11 @@ impl PicoTimer {
     }
 
     pub fn get_on_time_secs(&self) -> f32 {
-        (self.this_tick_time / 1_000) as f32
+        self.this_tick_time as f32 / 1_000.0
+    }
+
+    pub fn get_fps(&self) -> f32 {
+        1_000.0 / (self.this_tick_time - self.last_tick_time) as f32
     }
 }
 

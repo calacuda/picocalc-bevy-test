@@ -191,6 +191,43 @@ fn main() -> ! {
     loop {}
 }
 
+fn make_xz_plane() -> (Vec<[f32; 3]>, Vec<[usize; 2]>) {
+    let step = 1.0;
+    let nsteps = 32;
+
+    let mut vertices = Vec::new();
+
+    for i in 0..nsteps {
+        for j in 0..nsteps {
+            vertices.push([
+                (i as f32 - nsteps as f32 / 2.0) * step,
+                0.0,
+                (j as f32 - nsteps as f32 / 2.0) * step,
+            ]);
+        }
+    }
+
+    let mut lines = Vec::new();
+
+    for i in 0..nsteps {
+        for j in 0..nsteps {
+            let p1 = i * nsteps + j;
+            let p2 = p1 + 1;
+            let p3 = p1 + nsteps;
+
+            if p1 < vertices.len() && p2 < vertices.len() && p2 % nsteps != 0 {
+                lines.push([p1, p2]);
+            }
+
+            if p1 < vertices.len() && p3 < vertices.len() {
+                lines.push([p1, p3]);
+            }
+        }
+    }
+
+    (vertices, lines)
+}
+
 fn setup(mut cmds: Commands) {
     cmds.spawn(TextComponent {
         text: "Frames Rendered:".into(),
@@ -204,13 +241,13 @@ fn setup(mut cmds: Commands) {
         FpsText,
     ));
     cmds.spawn(TextComponent {
-        text: "Heap:".into(),
-        point: Point::new(10, 35),
+        text: "Free Heap Mem:".into(),
+        point: Point::new(10, 45),
     });
     cmds.spawn((
         TextComponent {
             text: "".into(),
-            point: Point::new(10, 45),
+            point: Point::new(10, 55),
         },
         HeapText,
     ));
@@ -264,52 +301,17 @@ fn walk(
     }
 }
 
-fn make_xz_plane() -> (Vec<[f32; 3]>, Vec<[usize; 2]>) {
-    let step = 1.0;
-    let nsteps = 32;
-
-    let mut vertices = Vec::new();
-
-    for i in 0..nsteps {
-        for j in 0..nsteps {
-            vertices.push([
-                (i as f32 - nsteps as f32 / 2.0) * step,
-                0.0,
-                (j as f32 - nsteps as f32 / 2.0) * step,
-            ]);
-        }
-    }
-
-    let mut lines = Vec::new();
-
-    for i in 0..nsteps {
-        for j in 0..nsteps {
-            let p1 = i * nsteps + j;
-            let p2 = p1 + 1;
-            let p3 = p1 + nsteps;
-
-            if p1 < vertices.len() && p2 < vertices.len() && p2 % nsteps != 0 {
-                lines.push([p1, p2]);
-            }
-
-            if p1 < vertices.len() && p3 < vertices.len() {
-                lines.push([p1, p3]);
-            }
-        }
-    }
-
-    (vertices, lines)
-}
-
 fn draw_fps(
     counter: Res<Counter>,
     time: NonSend<PicoTimer>,
     mut fps: Query<&mut TextComponent, (With<FpsText>, Without<HeapText>)>,
 ) {
+    let n = format!("{} ", counter.0);
     let message = format!(
-        "{} | {:.2}: fps",
-        counter.0,
-        counter.0 as f32 / time.get_on_time_secs()
+        "{n}| avg-FPS: {:.2}\n{}| cur-FPS: {:.2}",
+        counter.0 as f32 / time.get_on_time_secs(),
+        (0..n.len()).map(|_| ' ').collect::<String>(),
+        time.get_fps(),
     );
     _ = fps
         .single_mut()
