@@ -25,7 +25,7 @@ use nalgebra::{ComplexField, OPoint};
 use panic_probe as _;
 use picocalc_bevy_test::{
     keys::{KEY_DOWN, KEY_ENTER, KEY_LEFT, KEY_RIGHT, KEY_UP},
-    Display, KeyPresses, PicoCalcDefaultPlugins, PicoTimer,
+    Display, KeyPresses, LoggingEnv, PicoCalcDefaultPlugins, PicoTimer,
 };
 use rp235x_hal as hal;
 
@@ -309,13 +309,20 @@ fn setup(mut cmds: Commands) {
     });
 }
 
-fn toggle_heap_hud(keys: Res<KeyPresses>, heap_hud: Query<&mut Visible>) {
+fn toggle_heap_hud(
+    keys: Res<KeyPresses>,
+    heap_hud: Query<&mut Visible>,
+    mut logger: EventWriter<LoggingEnv>,
+) {
     if keys.just_pressed(KEY_ENTER) {
         let mut get_visible = {
             let mut visible = None;
 
             move |vis: &mut Visible| -> bool {
                 if let Some(visible) = visible {
+                    logger.write(LoggingEnv {
+                        msg: format!("turning heap hud: {}", if visible { "on" } else { "off" }),
+                    });
                     visible
                 } else {
                     let tmp_vis = !vis.should_show();

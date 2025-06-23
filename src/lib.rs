@@ -209,7 +209,7 @@ impl Plugin for PicoCalcDefaultPlugins {
                 if let Some(ref mut events) = log_events {
                     for event in events.iter_current_update_events() {
                         let _ = serial.write(&event.msg.clone().into_bytes());
-                        let _ = serial.write(&['\n' as u8]);
+                        let _ = serial.write(&['\n' as u8, '\r' as u8]);
                     }
 
                     events.update();
