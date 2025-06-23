@@ -60,10 +60,12 @@ use io::IoPin;
 pub struct ILI9486<RW, T>
 where
     RW: ReadWriteInterface<T> + PixelWriter<T>,
+    // RST: IoPin,
 {
     rw_interface: RW,
     color_mode: PixelFormat,
     _marker: PhantomData<T>,
+    // rst: Box<dyn IoPin>,
 }
 
 mod commands;
@@ -123,7 +125,7 @@ where
         delay: &mut dyn DelayNs,
         color_mode: PixelFormat,
         rw_interface: RW,
-        mut rst: RST,
+        rst: &mut RST,
     ) -> Result<ILI9486<RW, T>, DisplayError>
     where
         RST: IoPin,
@@ -138,6 +140,7 @@ where
             rw_interface: rw_interface,
             color_mode: PixelFormat::Rgb565,
             _marker: PhantomData,
+            // rst: rst_output,
         };
 
         driver.set_interface_pixel_format(&color_mode)?;
@@ -145,6 +148,13 @@ where
 
         Ok(driver)
     }
+
+    // pub fn reset(&self) {
+    //     wrap_output_err!(self.rst.set_low())?;
+    //     delay.delay_us(20);
+    //     wrap_output_err!(self.rst.set_high())?;
+    //     // delay.delay_us(120_000);
+    // }
 
     pub fn _draw_pixel(&mut self, x: u16, y: u16, r: u8, g: u8, b: u8) -> Result<(), DisplayError> {
         // let y = y + (480 - 320);

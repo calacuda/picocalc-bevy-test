@@ -33,11 +33,13 @@ fugit = "0.3.6"
 heapless = "0.8.0"
 rp-binary-info = "0.1.1"
 panic-halt = "1.0.0"
-embedded-hal = { version = "0.2.3", features = ["unproven"] }
+# embedded-hal = { version = "0.2.3", features = ["unproven"] }
+embedded-hal = { version = "1.0.0" }
 embedded-alloc = "0.6.0"
 embedded-graphics = { version = "0.8", features = ["defmt"] }
 portable-atomic = { version = "1.9.0", features = ["critical-section"] }
-bevy = { version = "0.16", default-features = false, features = [ "critical-section", "default_no_std" ] }
+# bevy = { version = "0.16", default-features = false, features = [ "critical-section", "default_no_std" ] }
+bevy = { git = "https://github.com/bevyengine/bevy", default-features = false, features = [ "critical-section", "default_no_std" ] }
 defmt-rtt = "1.0.0"
 # embedded-hal-bus = "0.2.0"
 ili9486-driver = { path = "./ili9486-driver/" }

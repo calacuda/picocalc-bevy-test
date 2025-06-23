@@ -17,6 +17,12 @@ use rp235x_hal::I2C;
 // Alias for our HAL crate
 use rp235x_hal::{self as hal, gpio::FunctionSioOutput};
 
+// use hal::{
+//     gpio, pac,
+//     ,
+//     uart::{DataBits, StopBits, UartConfig, UartPeripheral},
+// };
+
 // use defmt_rtt as _;
 use display_interface_spi::SPIInterface;
 use hal::fugit::RateExtU32;
@@ -27,6 +33,7 @@ use hal::Spi;
 use hal::{
     clocks::{init_clocks_and_plls, Clock},
     pac,
+    powman::Powman,
     sio::Sio,
     watchdog::Watchdog,
 };
@@ -98,7 +105,7 @@ impl Plugin for PicoCalcDefaultPlugins {
         // These are implicitly used by the spi driver if they are in the correct mode
         let dc = pins.gpio14.into_push_pull_output();
         let cs = pins.gpio13.into_push_pull_output();
-        let rst = pins.gpio15.into_push_pull_output();
+        let mut rst = OutputOnlyIoPin::new(pins.gpio15.into_push_pull_output());
         let spi_mosi = pins.gpio11.into_function::<hal::gpio::FunctionSpi>();
         let spi_miso = pins.gpio12.into_function::<hal::gpio::FunctionSpi>();
         // #define RST_PIN 15
@@ -115,13 +122,8 @@ impl Plugin for PicoCalcDefaultPlugins {
 
         let display_spi = SPIInterface::new(spi, dc, cs);
 
-        let mut lcd_driver = ILI9486::new(
-            &mut timer,
-            PixelFormat::Rgb565,
-            display_spi,
-            OutputOnlyIoPin::new(rst),
-        )
-        .unwrap();
+        let mut lcd_driver =
+            ILI9486::new(&mut timer, PixelFormat::Rgb565, display_spi, &mut rst).unwrap();
 
         // reset
         lcd_driver.write_command(Command::Nop, &[]).unwrap();
@@ -166,6 +168,11 @@ impl Plugin for PicoCalcDefaultPlugins {
             &clocks.system_clock,
         );
 
+        // TIMER setup
+        let powman = Powman::new(pac.POWMAN, None);
+
+        let pico_timer = PicoTimer::new(powman);
+
         app.set_runner(|mut app| loop {
             app.update();
 
@@ -180,11 +187,15 @@ impl Plugin for PicoCalcDefaultPlugins {
         })
         .insert_non_send_resource(Display { output: lcd_driver })
         .insert_non_send_resource(timer)
+        .insert_non_send_resource(pico_timer)
+        .insert_non_send_resource(rst)
         // TODO: make a non_send_resource to hold the unused pins which are exposed on the side of
         // the device, I2C, & UARTs.
         // TODO: make a non_send_resource to hold the SD card
         .insert_resource(KeyPresses::default())
-        .add_systems(Update, get_key_report);
+        // .insert_resource(DoubleFrameBuffer::new(320, 320))
+        .add_systems(Startup, tick_timer)
+        .add_systems(Update, (tick_timer, get_key_report));
     }
 }
 
@@ -207,6 +218,45 @@ fn get_key_report(mut key_presses: ResMut<KeyPresses>, mut keyboard: NonSendMut<
                 // key_presses.press_key(key);
             }
         }
+    }
+}
+
+fn tick_timer(mut timer: NonSendMut<PicoTimer>) {
+    timer.tick();
+}
+
+// #[derive(Resource)]
+pub struct PicoTimer {
+    pub powman: Powman,
+    last_tick_time: u64,
+    this_tick_time: u64,
+}
+
+impl PicoTimer {
+    pub fn new(mut powman: Powman) -> Self {
+        powman.aot_start();
+
+        let this_tick_time = powman.aot_get_time();
+
+        Self {
+            powman,
+            last_tick_time: 0,
+            this_tick_time,
+        }
+    }
+
+    fn tick(&mut self) {
+        self.last_tick_time = self.this_tick_time;
+
+        self.this_tick_time = self.powman.aot_get_time();
+    }
+
+    pub fn delta_millis(&self) -> u64 {
+        self.this_tick_time - self.last_tick_time
+    }
+
+    pub fn get_on_time_secs(&self) -> f32 {
+        (self.this_tick_time / 1_000) as f32
     }
 }
 
@@ -382,6 +432,98 @@ pub struct Display {
         u8,
     >,
 }
+
+/*
+
+// pub struct FrameBuffer(Vec<Pixel<Rgb565>>);
+pub type FrameBuffer = [Pixel<Rgb565>; 320 * 320];
+
+#[derive(Resource)]
+pub struct DoubleFrameBuffer {
+    fbs: [FrameBuffer; 2],
+    i: usize,
+    w: usize,
+    h: usize,
+}
+
+impl DoubleFrameBuffer {
+    pub fn new(w: usize, h: usize) -> Self {
+        // let mut fb = FrameBuffer::with_capacity(w * h);
+        let mut fb = [Pixel(Point::new(0, 0), Rgb565::BLACK); 320 * 320];
+
+        for i in 0..(w * h) {
+            let x = i % w;
+            let y = i / h;
+            fb[i] = Pixel(Point::new(x as i32, y as i32), Rgb565::BLACK);
+        }
+
+        Self {
+            fbs: [fb.clone(), fb],
+            i: 0,
+            // len: w * h,
+            w,
+            h,
+        }
+    }
+
+    pub fn switch_buffer(&mut self) {
+        self.i += 1;
+        self.i %= 2;
+    }
+
+    pub fn get(&self) -> impl Iterator<Item = Pixel<<Self as DrawTarget>::Color>> {
+        // let fb = FrameBuffer::with_capacity(self.len);
+        // &self.fbs[self.i]
+        self.fbs[self.i]
+            .clone()
+            .into_iter()
+            .zip(self.fbs[(self.i + 1) % 2].clone().into_iter())
+            // .into_iter()
+            .filter_map(|(old, new)| {
+                if new.0 != old.0 || new.1 != old.1 {
+                    Some(new)
+                } else {
+                    None
+                }
+            })
+        // .collect()
+
+        // fb
+    }
+}
+
+impl Dimensions for DoubleFrameBuffer {
+    fn bounding_box(&self) -> embedded_graphics::primitives::Rectangle {
+        Rectangle::with_corners(Point::new(0, 0), Point::new(self.w as i32, self.h as i32))
+    }
+}
+
+impl DrawTarget for DoubleFrameBuffer {
+    type Color = Rgb565;
+    type Error = ();
+
+    fn draw_iter<I>(&mut self, pixels: I) -> core::result::Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = Pixel<Self::Color>>,
+    {
+        let w = self.w;
+        let h = self.h;
+
+        for Pixel(coord, color) in pixels.into_iter() {
+            let x = coord.x;
+            let y = coord.y;
+
+            if x >= w as i32 || y >= h as i32 || x < 0 || y < 0 {
+                let index: usize = x as usize + y as usize * w;
+                self.fbs[self.i][index] = Pixel(coord, color);
+            }
+        }
+
+        Ok(())
+    }
+}
+
+*/
 
 // same panicking *behavior* as `panic-probe` but doesn't print a panic message
 // this prevents the panic message being printed *twice* when `defmt::panic` is invoked
