@@ -20,8 +20,6 @@ use embedded_graphics::{
     prelude::*,
     text::Text,
 };
-// use embedded_hal::digital::OutputPin;
-// use ili9486::io::{shim::OutputOnlyIoPin, IoPin};
 use nalgebra::Point3;
 use nalgebra::{ComplexField, OPoint};
 use panic_probe as _;
@@ -29,7 +27,7 @@ use picocalc_bevy_test::{
     keys::{KEY_DOWN, KEY_ENTER, KEY_LEFT, KEY_RIGHT, KEY_UP},
     Display, KeyPresses, PicoCalcDefaultPlugins, PicoTimer,
 };
-use rp235x_hal::{self as hal};
+use rp235x_hal as hal;
 
 // Tell the Boot ROM about our application
 #[link_section = ".start_block"]
@@ -378,6 +376,7 @@ fn draw_fps(
     counter: Res<Counter>,
     time: NonSend<PicoTimer>,
     mut fps: Query<&mut TextComponent, (With<FpsText>, Without<HeapText>)>,
+    // mut logger: EventWriter<LoggingEnv>,
 ) {
     let n = format!("{} ", counter.0);
     let message = format!(
@@ -389,6 +388,7 @@ fn draw_fps(
     _ = fps
         .single_mut()
         .map(|ref mut counter| counter.set_text(&message));
+    // logger.write(LoggingEnv { msg: message });
 }
 
 fn draw_heap(mut heap: Query<&mut TextComponent, (With<HeapText>, Without<FpsText>)>) {

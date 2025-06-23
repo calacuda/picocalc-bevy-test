@@ -43,6 +43,9 @@ ili9486-driver = { path = "./ili9486-driver/" }
 # ili9486-driver = { git = "https://github.com/chrismoos/ili9486-driver" }
 tinytga = "0.5.0"
 nalgebra = {version = "0.32.3", default-features = false, features = [ "libm" ] }
+usb-device = "0.3.2"
+usbd-serial = "0.2.2"
+embedded-sdmmc = "0.9.0"
 
 [dependencies.embedded-gfx]
 git = "https://github.com/calacuda/embedded-gfx"

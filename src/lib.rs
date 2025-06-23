@@ -6,12 +6,14 @@ extern crate alloc;
 use bevy::prelude::*;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use defmt_brtt as _;
-use fugit::Rate;
-use rp235x_hal::i2c::Controller;
-use rp235x_hal::pac::I2C1; // global logger
-
 use embedded_hal::spi::MODE_3;
+use fugit::Rate;
 use panic_probe as _;
+use rp235x_hal::i2c::Controller;
+use rp235x_hal::pac::I2C1;
+use usb_device::bus::UsbBusAllocator;
+use usb_device::device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid};
+use usbd_serial::SerialPort;
 
 use rp235x_hal::I2C;
 // Alias for our HAL crate
@@ -45,7 +47,7 @@ pub mod keys;
 
 /// External high-speed crystal on the Raspberry Pi Pico 2 board is 12 MHz.
 /// Adjust if your board has a different frequency
-const XTAL_FREQ_HZ: u32 = 12_000_000u32;
+pub const XTAL_FREQ_HZ: u32 = 12_000_000u32;
 
 // Keyboard  I2C stuff
 pub const _REG_VER: u8 = 0x01; // fw version
@@ -170,16 +172,55 @@ impl Plugin for PicoCalcDefaultPlugins {
 
         // TIMER setup
         let powman = Powman::new(pac.POWMAN, None);
-
         let pico_timer = PicoTimer::new(powman);
 
-        app.set_runner(|mut app| loop {
-            app.update();
+        app.set_runner(move |mut app| {
+            // usb logging
+            let usb_bus = UsbBusAllocator::new(hal::usb::UsbBus::new(
+                pac.USB,
+                pac.USB_DPRAM,
+                clocks.usb_clock,
+                true,
+                &mut pac.RESETS,
+            ));
+            let mut serial = SerialPort::new(&usb_bus);
 
-            if let Some(exit) = app.should_exit() {
-                return exit;
+            let mut usb_dev = UsbDeviceBuilder::new(&usb_bus, UsbVidPid(0x16c0, 0x27dd))
+                .strings(&[StringDescriptors::default()
+                    .manufacturer("implRust")
+                    .product("Ferris")
+                    .serial_number("TEST")])
+                .unwrap()
+                .device_class(2) // 2 for the CDC, from: https://www.usb.org/defined-class-codes
+                .build();
+
+            serial.write(b"starting bevy\n").unwrap();
+
+            loop {
+                let _ = usb_dev.poll(&mut [&mut serial]);
+
+                app.update();
+
+                let mut log_events = {
+                    let world = app.world_mut();
+                    world.get_resource_mut::<Events<LoggingEnv>>()
+                };
+
+                if let Some(ref mut events) = log_events {
+                    for event in events.iter_current_update_events() {
+                        let _ = serial.write(&event.msg.clone().into_bytes());
+                        let _ = serial.write(&['\n' as u8]);
+                    }
+
+                    events.update();
+                }
+
+                if let Some(exit) = app.should_exit() {
+                    return exit;
+                }
             }
         })
+        .add_event::<LoggingEnv>()
         .insert_non_send_resource(Keeb {
             i2c,
             adr: keeb_addr,
@@ -196,11 +237,29 @@ impl Plugin for PicoCalcDefaultPlugins {
         // .insert_resource(DoubleFrameBuffer::new(320, 320))
         .add_systems(Startup, (start_timer, tick_timer))
         .add_systems(Update, get_key_report)
+        // .add_systems(Update, usb_poll)
         .add_systems(PostUpdate, tick_timer);
     }
 }
 
-fn get_key_report(mut key_presses: ResMut<KeyPresses>, mut keyboard: NonSendMut<Keeb>) {
+// #[derive(Resource)]
+// pub struct UsbPort<'a> {
+//     pub usb_dev: UsbDevice<'a, hal::usb::UsbBus>,
+//     pub serial: SerialPort<'a, hal::usb::UsbBus>,
+//     // _usb_bus: UsbBusAllocator<hal::usb::UsbBus>,
+//     // _usb_bus: UsbAlloc,
+// }
+//
+// pub struct UsbAlloc(pub UsbBusAllocator<hal::usb::UsbBus>);
+//
+// pub fn usb_poll(
+//     mut usb_dev: NonSendMut<UsbDevice<hal::usb::UsbBus>>,
+//     mut serial: NonSendMut<SerialPort<hal::usb::UsbBus>>,
+// ) {
+//     let _ = usb_dev.poll(&mut [&mut *serial]);
+// }
+
+pub fn get_key_report(mut key_presses: ResMut<KeyPresses>, mut keyboard: NonSendMut<Keeb>) {
     let num_keys = keyboard.key_count();
     key_presses.step();
 
@@ -222,11 +281,11 @@ fn get_key_report(mut key_presses: ResMut<KeyPresses>, mut keyboard: NonSendMut<
     }
 }
 
-fn start_timer(mut timer: NonSendMut<PicoTimer>) {
+pub fn start_timer(mut timer: NonSendMut<PicoTimer>) {
     timer.start();
 }
 
-fn tick_timer(mut timer: NonSendMut<PicoTimer>) {
+pub fn tick_timer(mut timer: NonSendMut<PicoTimer>) {
     timer.tick();
 }
 
@@ -391,7 +450,7 @@ impl KeyPresses {
 }
 
 pub struct Keeb {
-    i2c: I2C<
+    pub i2c: I2C<
         I2C1,
         (
             Pin<Gpio6, FunctionI2C, PullUp>,
@@ -444,97 +503,146 @@ pub struct Display {
     >,
 }
 
-/*
-
-// pub struct FrameBuffer(Vec<Pixel<Rgb565>>);
-pub type FrameBuffer = [Pixel<Rgb565>; 320 * 320];
-
-#[derive(Resource)]
-pub struct DoubleFrameBuffer {
-    fbs: [FrameBuffer; 2],
-    i: usize,
-    w: usize,
-    h: usize,
+#[derive(Event, Clone, Eq, PartialEq, PartialOrd, Ord)]
+pub struct LoggingEnv {
+    pub msg: String,
 }
 
-impl DoubleFrameBuffer {
-    pub fn new(w: usize, h: usize) -> Self {
-        // let mut fb = FrameBuffer::with_capacity(w * h);
-        let mut fb = [Pixel(Point::new(0, 0), Rgb565::BLACK); 320 * 320];
-
-        for i in 0..(w * h) {
-            let x = i % w;
-            let y = i / h;
-            fb[i] = Pixel(Point::new(x as i32, y as i32), Rgb565::BLACK);
-        }
-
-        Self {
-            fbs: [fb.clone(), fb],
-            i: 0,
-            // len: w * h,
-            w,
-            h,
-        }
-    }
-
-    pub fn switch_buffer(&mut self) {
-        self.i += 1;
-        self.i %= 2;
-    }
-
-    pub fn get(&self) -> impl Iterator<Item = Pixel<<Self as DrawTarget>::Color>> {
-        // let fb = FrameBuffer::with_capacity(self.len);
-        // &self.fbs[self.i]
-        self.fbs[self.i]
-            .clone()
-            .into_iter()
-            .zip(self.fbs[(self.i + 1) % 2].clone().into_iter())
-            // .into_iter()
-            .filter_map(|(old, new)| {
-                if new.0 != old.0 || new.1 != old.1 {
-                    Some(new)
-                } else {
-                    None
-                }
-            })
-        // .collect()
-
-        // fb
-    }
-}
-
-impl Dimensions for DoubleFrameBuffer {
-    fn bounding_box(&self) -> embedded_graphics::primitives::Rectangle {
-        Rectangle::with_corners(Point::new(0, 0), Point::new(self.w as i32, self.h as i32))
-    }
-}
-
-impl DrawTarget for DoubleFrameBuffer {
-    type Color = Rgb565;
-    type Error = ();
-
-    fn draw_iter<I>(&mut self, pixels: I) -> core::result::Result<(), Self::Error>
-    where
-        I: IntoIterator<Item = Pixel<Self::Color>>,
-    {
-        let w = self.w;
-        let h = self.h;
-
-        for Pixel(coord, color) in pixels.into_iter() {
-            let x = coord.x;
-            let y = coord.y;
-
-            if x >= w as i32 || y >= h as i32 || x < 0 || y < 0 {
-                let index: usize = x as usize + y as usize * w;
-                self.fbs[self.i][index] = Pixel(coord, color);
-            }
-        }
-
-        Ok(())
-    }
-}
-
-*/
+// pub fn build_pico_calc(
+//     app: &mut App,
+//     mut pac: Peripherals,
+//     watchdog: &mut Watchdog,
+//     sio: Sio,
+//     // clocks: hal::clocks::ClocksManager,
+// ) {
+//     // let mut pac = pac::Peripherals::take().unwrap();
+//     // let mut watchdog = Watchdog::new(pac.WATCHDOG);
+//     // let sio = Sio::new(pac.SIO);
+//
+//     let clocks = init_clocks_and_plls(
+//         XTAL_FREQ_HZ,
+//         pac.XOSC,
+//         pac.CLOCKS,
+//         pac.PLL_SYS,
+//         pac.PLL_USB,
+//         &mut pac.RESETS,
+//         watchdog,
+//     )
+//     .ok()
+//     .unwrap();
+//
+//     let mut timer = hal::Timer::new_timer0(pac.TIMER0, &mut pac.RESETS, &clocks);
+//
+//     let pins = hal::gpio::Pins::new(
+//         pac.IO_BANK0,
+//         pac.PADS_BANK0,
+//         sio.gpio_bank0,
+//         &mut pac.RESETS,
+//     );
+//
+//     // SETUP SCREEN
+//     // These are implicitly used by the spi driver if they are in the correct mode
+//     let dc = pins.gpio14.into_push_pull_output();
+//     let cs = pins.gpio13.into_push_pull_output();
+//     let mut rst = OutputOnlyIoPin::new(pins.gpio15.into_push_pull_output());
+//     let spi_mosi = pins.gpio11.into_function::<hal::gpio::FunctionSpi>();
+//     let spi_miso = pins.gpio12.into_function::<hal::gpio::FunctionSpi>();
+//     // #define RST_PIN 15
+//     let spi_sclk = pins.gpio10.into_function::<hal::gpio::FunctionSpi>();
+//     let spi_bus = hal::spi::Spi::<_, _, _, 8>::new(pac.SPI1, (spi_mosi, spi_miso, spi_sclk));
+//
+//     // Exchange the uninitialised SPI driver for an initialised one
+//     let spi = spi_bus.init(
+//         &mut pac.RESETS,
+//         clocks.peripheral_clock.freq(),
+//         200_000_000u32.Hz(),
+//         MODE_3,
+//     );
+//
+//     let display_spi = SPIInterface::new(spi, dc, cs);
+//
+//     let mut lcd_driver =
+//         ILI9486::new(&mut timer, PixelFormat::Rgb565, display_spi, &mut rst).unwrap();
+//
+//     // reset
+//     lcd_driver.write_command(Command::Nop, &[]).unwrap();
+//     lcd_driver.write_command(Command::SleepOut, &[]).unwrap();
+//
+//     lcd_driver
+//         .write_command(Command::DisplayInversionOn, &[])
+//         .unwrap();
+//
+//     // MADCTL settings
+//     lcd_driver
+//         .write_command(Command::MemoryAccessControl, &[0b01001000])
+//         .unwrap();
+//
+//     lcd_driver.clear_screen().unwrap();
+//
+//     // turn on display
+//     lcd_driver
+//         .write_command(Command::NormalDisplayMode, &[])
+//         .unwrap();
+//     lcd_driver.write_command(Command::DisplayOn, &[]).unwrap();
+//     lcd_driver.write_command(Command::IdleModeOff, &[]).unwrap();
+//     lcd_driver
+//         .write_command(Command::TearingEffectLineOn, &[])
+//         .unwrap();
+//
+//     // SETUP KEEB
+//     let keeb_addr = 0x1f;
+//     let i2c_freq = 200_000.Hz();
+//     let sda_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio6.reconfigure();
+//     let scl_pin: Pin<_, FunctionI2C, PullUp> = pins.gpio7.reconfigure();
+//
+//     // Create the I²C drive, using the two pre-configured pins. This will fail
+//     // at compile time if the pins are in the wrong mode, or if this I²C
+//     // peripheral isn't available on these pins!
+//     let i2c = hal::I2C::i2c1(
+//         pac.I2C1,
+//         sda_pin,
+//         scl_pin,
+//         i2c_freq,
+//         &mut pac.RESETS,
+//         &clocks.system_clock,
+//     );
+//
+//     // TIMER setup
+//     let powman = Powman::new(pac.POWMAN, None);
+//
+//     let pico_timer = PicoTimer::new(powman);
+//     // let usb = UsbPort {
+//     //     usb_dev,
+//     //     serial,
+//     //     _usb_bus: usb_alloc,
+//     // };
+//
+//     app.set_runner(|mut app| loop {
+//         app.update();
+//
+//         if let Some(exit) = app.should_exit() {
+//             return exit;
+//         }
+//     })
+//     .insert_non_send_resource(Keeb {
+//         i2c,
+//         adr: keeb_addr,
+//         speed: i2c_freq,
+//     })
+//     .insert_non_send_resource(Display { output: lcd_driver })
+//     .insert_non_send_resource(timer)
+//     .insert_non_send_resource(pico_timer)
+//     .insert_non_send_resource(rst)
+//     // TODO: make a non_send_resource to hold the unused pins which are exposed on the side of
+//     // the device, I2C, & UARTs.
+//     // TODO: make a non_send_resource to hold the SD card
+//     .insert_resource(KeyPresses::default())
+//     // .insert_resource(DoubleFrameBuffer::new(320, 320))
+//     .add_systems(Startup, (start_timer, tick_timer))
+//     .add_systems(Update, get_key_report)
+//     // .add_systems(Update, usb_poll)
+//     .add_systems(PostUpdate, tick_timer);
+// }
 
 // same panicking *behavior* as `panic-probe` but doesn't print a panic message
 // this prevents the panic message being printed *twice* when `defmt::panic` is invoked
