@@ -163,6 +163,9 @@ where
 }
 
 #[derive(Component)]
+pub struct Invisible;
+
+#[derive(Component)]
 pub struct FpsText;
 
 #[derive(Component)]
@@ -184,7 +187,10 @@ fn main() -> ! {
         }))
         .insert_resource(Engine3d::new(320, 320))
         .add_systems(Startup, (clear_display, setup))
-        .add_systems(Update, (walk, draw_fps, draw_heap, update_counter).chain())
+        .add_systems(
+            Update,
+            (walk, (draw_fps, draw_heap, update_counter).chain()),
+        )
         .add_systems(PostUpdate, render)
         .run();
 
@@ -329,8 +335,8 @@ fn render(
     mut display: NonSendMut<Display>,
     mut camera: ResMut<Engine3d>,
     mut player_buf: ResMut<DoubleBufferRes<PlayerLocation>>,
-    text_comps: Query<&TextComponent, Changed<TextComponent>>,
-    mesh_comps: Query<Ref<Mesh3D>>,
+    text_comps: Query<&TextComponent, (Changed<TextComponent>, Without<Invisible>)>,
+    mesh_comps: Query<Ref<Mesh3D>, Without<Invisible>>,
 ) {
     let Display { output: display } = display.as_mut();
     let cam_changed = camera.changed || player_buf.was_updated();
