@@ -3,16 +3,14 @@
 
 extern crate alloc;
 
+// use defmt_rtt as _;
 use alloc::format;
 use bevy::prelude::*;
-// use defmt_rtt as _;
 use embedded_alloc::LlffHeap as Heap;
 use embedded_gfx::{
-    // camera::Camera,
     draw::draw,
     mesh::{Geometry, K3dMesh, RenderMode},
-    K3dengine,
-    PI,
+    K3dengine, PI,
 };
 use embedded_graphics::{
     mono_font::{ascii::FONT_6X12, MonoTextStyle},
@@ -36,7 +34,7 @@ pub static IMAGE_DEF: hal::block::ImageDef = hal::block::ImageDef::secure_exe();
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
-const HEAP_SIZE: usize = 96 * 1024;
+const HEAP_SIZE: usize = 128 * 1024;
 
 #[derive(Resource, Default)]
 pub struct Counter(pub u32);
@@ -56,7 +54,7 @@ pub struct PlayerLocation {
 pub struct Renderable;
 
 #[derive(Component)]
-// #[require(Renderable)]
+#[require(Renderable)]
 pub struct TextComponent {
     pub text: String,
     pub point: Point,
@@ -69,7 +67,7 @@ impl TextComponent {
 }
 
 #[derive(Component)]
-// #[require(Renderable)]
+#[require(Renderable)]
 pub struct Mesh3D {
     pub vertices: Vec<[f32; 3]>,
     pub lines: Vec<[usize; 2]>,
@@ -206,13 +204,14 @@ fn main() -> ! {
     init_heap();
 
     let pos = Point3::new(0.0, 2.0, 0.0);
+    let looking_at = pos + nalgebra::Vector3::new(0.0_f32.cos(), 0.0_f32.sin(), 0.0_f32.sin());
 
     App::new()
         .add_plugins(PicoCalcDefaultPlugins)
         .init_resource::<Counter>()
         .insert_resource(DoubleBufferRes::new(PlayerLocation {
             pos,
-            looking_at: pos + nalgebra::Vector3::new((0.0).cos(), (0.0).sin(), 0.0_f32.sin()),
+            looking_at,
             ..default()
         }))
         .insert_resource(Engine3d::new(320, 320))
@@ -280,20 +279,22 @@ fn setup(mut cmds: Commands) {
         },
         FpsText,
     ));
+    // for i in (0..1) {
     cmds.spawn((
         TextComponent {
             text: "Free Heap Mem:".into(),
             point: Point::new(10, 45),
         },
-        Visible::new(true),
+        Visible::new(false),
         HeapHud,
     ));
+    // }
     cmds.spawn((
         TextComponent {
             text: "".into(),
             point: Point::new(10, 55),
         },
-        Visible::new(true),
+        Visible::new(false),
         HeapText,
         HeapHud,
     ));
@@ -336,7 +337,6 @@ fn toggle_heap_hud(
             let visible = get_visible(vis);
 
             vis.set_visible(visible);
-            // vis.was_rendered();
         }
     }
 }
@@ -387,7 +387,7 @@ fn draw_fps(
 ) {
     let n = format!("{} ", counter.0);
     let message = format!(
-        "{n}| avg-FPS: {:.2}\n{}| cur-FPS: {:.2}",
+        "{n}| avg-FPS => {:.2}\n{}| cur-FPS => {:.2}",
         counter.0 as f32 / time.get_on_time_secs(),
         (0..n.len()).map(|_| ' ').collect::<String>(),
         time.get_fps(),
@@ -395,18 +395,25 @@ fn draw_fps(
     _ = fps
         .single_mut()
         .map(|ref mut counter| counter.set_text(&message));
-    // logger.write(LoggingEnv { msg: message });
+    // logger.write(LoggingEnv {
+    //     msg: format!("fps => {}", time.get_fps()),
+    // });
 }
 
-fn draw_heap(mut heap: Query<&mut TextComponent, (With<HeapText>, Without<FpsText>)>) {
+fn draw_heap(
+    mut heap: Query<&mut TextComponent, (With<HeapText>, Without<FpsText>)>,
+    // mut logger: EventWriter<LoggingEnv>,
+) {
     let message = format!("{} / {} KiB", HEAP.free() / 1024, HEAP_SIZE / 1024);
     _ = heap
         .single_mut()
         .map(|ref mut counter| counter.set_text(&message));
+    // logger.write(LoggingEnv { msg: message });
 }
 
 fn render(
     mut display: NonSendMut<Display>,
+    // mut display: NonSendMut<DoubleFrameBuffer>,
     mut camera: ResMut<Engine3d>,
     mut player_buf: ResMut<DoubleBufferRes<PlayerLocation>>,
     text_comps: Query<
@@ -417,8 +424,11 @@ fn render(
         ),
     >,
     mesh_comps: Query<(Ref<Mesh3D>, Option<&mut Visible>), Without<TextComponent>>,
+    // mut logger: EventWriter<LoggingEnv>,
 ) {
     let Display { output: display } = display.as_mut();
+    // let display = &mut *display;
+
     let cam_changed = camera.changed || player_buf.was_updated();
 
     let setup_cam = |player: &PlayerLocation, camera: &mut ResMut<Engine3d>| {
@@ -427,12 +437,10 @@ fn render(
         camera.engine.camera.set_target(lookat);
     };
 
-    // let meshes = mesh_comps.iter_mut();
-
     for (mesh, vis) in mesh_comps {
+        // "unrender" all meshes if changed or camera changed
         if cam_changed && (vis.is_none() || vis.as_ref().is_some_and(|vis| vis.should_rm())) {
             setup_cam(player_buf.get_inactive(), &mut camera);
-            // "unrender" all meshes if changed or camera changed
             let mut renderable = K3dMesh::new(Geometry {
                 vertices: &mesh.vertices,
                 faces: &[],
@@ -445,16 +453,12 @@ fn render(
             renderable.set_color(Rgb565::BLACK);
             camera.engine.render([&renderable], |p| draw(p, display))
         }
-        // }
 
         // "rerender" a ll renderables if changed or camera changed
-
-        // for (mesh, vis) in meshes {
         if (vis.is_none() || vis.as_ref().is_some_and(|vis| vis.should_show()))
             && (mesh.is_changed() || cam_changed)
         {
             setup_cam(player_buf.get_active(), &mut camera);
-
             let mut renderable = K3dMesh::new(Geometry {
                 vertices: &mesh.vertices,
                 faces: &[],
@@ -466,7 +470,6 @@ fn render(
             renderable.set_scale(mesh.scale);
             renderable.set_color(mesh.color);
             camera.engine.render([&renderable], |p| draw(p, display))
-            // }
         }
 
         vis.map(|ref mut vis| vis.was_rendered());
@@ -479,8 +482,8 @@ fn render(
         let point = text.point;
 
         if vis.is_none() || vis.as_ref().is_some_and(|vis| vis.should_show()) {
-            let text = text.text.clone();
-            Text::new(&text, point, style).draw(display).unwrap();
+            // let text = text.text.clone();
+            Text::new(&text.text, point, style).draw(display).unwrap();
         } else if vis.as_ref().is_some_and(|vis| vis.should_rm()) {
             let text: String = text
                 .text
@@ -493,6 +496,9 @@ fn render(
         vis.map(|ref mut vis| vis.was_rendered());
     }
 
+    // display.frame_len(&mut logger);
+    // display.draw_frame(&mut logger);
+
     // call DoubleBufferRes::switch()
     player_buf.switch();
     camera.changed = false;
@@ -502,6 +508,10 @@ fn clear_display(mut display: NonSendMut<Display>) {
     let Display { output } = display.as_mut();
     _ = output.clear(Rgb565::BLACK);
 }
+
+// fn clear_display(mut display: NonSendMut<DoubleFrameBuffer>) {
+//     display.clear();
+// }
 
 fn update_counter(mut counter: ResMut<Counter>) {
     counter.0 += 1;
