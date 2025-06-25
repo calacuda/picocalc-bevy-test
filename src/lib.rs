@@ -10,28 +10,27 @@ use defmt_brtt as _;
 use embedded_graphics::primitives::Rectangle;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, Pixel};
 use embedded_hal::spi::MODE_3;
+use embedded_hal_bus::spi::ExclusiveDevice;
+use embedded_sdmmc::{BlockDevice, SdCard, TimeSource, Timestamp, VolumeIdx, VolumeManager};
 use fugit::Rate;
+use hal::gpio::FunctionSioOutput;
+use hal::i2c::Controller;
+use hal::pac::I2C1;
+use hal::pac::SPI0;
+use hal::timer::CopyableTimer0;
+use hal::{Timer, I2C};
 use panic_probe as _;
-use rp235x_hal::i2c::Controller;
-use rp235x_hal::pac::I2C1;
 use usb_device::bus::UsbBusAllocator;
 use usb_device::device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid};
 use usbd_serial::SerialPort;
 
-use rp235x_hal::I2C;
 // Alias for our HAL crate
-use rp235x_hal::{self as hal, gpio::FunctionSioOutput};
-
-// use hal::{
-//     gpio, pac,
-//     ,
-//     uart::{DataBits, StopBits, UartConfig, UartPeripheral},
-// };
+use rp235x_hal as hal;
 
 // use defmt_rtt as _;
 use display_interface_spi::SPIInterface;
 use hal::fugit::RateExtU32;
-use hal::gpio::bank0::{Gpio10, Gpio11, Gpio12, Gpio13, Gpio14, Gpio6, Gpio7};
+use hal::gpio::bank0::*;
 use hal::gpio::{FunctionI2C, FunctionSpi, Pin, PullDown, PullUp};
 use hal::spi::Enabled;
 use hal::Spi;
@@ -107,6 +106,10 @@ impl Plugin for PicoCalcDefaultPlugins {
         );
 
         // SETUP SCREEN
+        // Pin<Gpio11, FunctionSpi, PullDown>,
+        // Pin<Gpio12, FunctionSpi, PullDown>,
+        // Pin<Gpio10, FunctionSpi, PullDown>,
+
         // These are implicitly used by the spi driver if they are in the correct mode
         let dc = pins.gpio14.into_push_pull_output();
         let cs = pins.gpio13.into_push_pull_output();
@@ -177,6 +180,43 @@ impl Plugin for PicoCalcDefaultPlugins {
         let powman = Powman::new(pac.POWMAN, None);
         let pico_timer = PicoTimer::new(powman);
 
+        // SD card osetup
+        let cs = pins.gpio17.into_push_pull_output();
+        let spi_mosi = pins.gpio19.into_function::<hal::gpio::FunctionSpi>();
+        let spi_miso = pins.gpio16.into_function::<hal::gpio::FunctionSpi>();
+        let spi_sclk = pins.gpio18.into_function::<hal::gpio::FunctionSpi>();
+        let spi_bus = hal::spi::Spi::<_, _, _, 8>::new(pac.SPI0, (spi_mosi, spi_miso, spi_sclk));
+
+        let spi = spi_bus.init(
+            &mut pac.RESETS,
+            clocks.peripheral_clock.freq(),
+            1_000_000.Hz(), // card initialization happens at low baud rate
+            embedded_hal::spi::MODE_0,
+        );
+        let spi = ExclusiveDevice::new(spi, cs, timer).unwrap();
+        let sdcard = SdCard::new(spi, timer);
+        let volume_mgr = VolumeManager::new(sdcard, DummyTimesource::default());
+        let fs = FileSystem(volume_mgr);
+
+        // let dir = || {
+        //     // let mut volume_mgr = VolumeManager::new(sdcard, DummyTimesource::default());
+        //     // let vol0 = volume_mgr
+        //     //     .open_volume(VolumeIdx(0))
+        //     //     .map_or(None, |vol| Some(vol));
+        //     // let dir = vol0.map_or(None, move |vol| {
+        //     //     vol.open_root_dir().map_or(None, |dir| Some(dir))
+        //     // });
+        //     let mut volume_mgr = VolumeManager::new(sdcard, DummyTimesource::default());
+        //     let Ok(mut volume0) = volume_mgr.open_volume(VolumeIdx(0)) else {
+        //         return None;
+        //     };
+        //     let Ok(mut root_dir) = volume0.open_root_dir() else {
+        //         return None;
+        //     };
+        //
+        //     Some(root_dir)
+        // };
+
         app.set_runner(move |mut app| {
             // usb logging
             let usb_bus = UsbBusAllocator::new(hal::usb::UsbBus::new(
@@ -236,6 +276,9 @@ impl Plugin for PicoCalcDefaultPlugins {
         // TODO: make a non_send_resource to hold the unused pins which are exposed on the side of
         // the device, I2C, & UARTs.
         // TODO: make a non_send_resource to hold the SD card
+        // .insert_non_send_resource(volume_mgr)
+        // .insert_non_send_resource(volume0)
+        .insert_non_send_resource(fs)
         .insert_resource(KeyPresses::default())
         // .insert_resource(DoubleFrameBuffer::new(320, 320))
         // .insert_non_send_resource(DoubleFrameBuffer::new(lcd_driver, 320, 320))
@@ -276,6 +319,117 @@ pub fn tick_timer(mut timer: NonSendMut<PicoTimer>) {
     timer.tick();
 }
 
+#[derive(Default)]
+pub struct DummyTimesource();
+
+impl TimeSource for DummyTimesource {
+    // In theory you could use the RTC of the rp2040 here, if you had
+    // any external time synchronizing device.
+    fn get_timestamp(&self) -> Timestamp {
+        Timestamp {
+            year_since_1970: 0,
+            zero_indexed_month: 0,
+            zero_indexed_day: 0,
+            hours: 0,
+            minutes: 0,
+            seconds: 0,
+        }
+    }
+}
+
+pub type FS = FileSystem;
+pub type FileSystem = FileSystemStruct<
+    SdCard<
+        ExclusiveDevice<
+            // SPI0,
+            // SpiDevice<
+            Spi<
+                Enabled,
+                SPI0,
+                (
+                    Pin<Gpio19, FunctionSpi, PullDown>,
+                    Pin<Gpio16, FunctionSpi, PullDown>,
+                    Pin<Gpio18, FunctionSpi, PullDown>,
+                ),
+                8,
+            >,
+            // >,
+            Pin<Gpio17, FunctionSioOutput, PullDown>,
+            Timer<CopyableTimer0>,
+        >,
+        Timer<CopyableTimer0>,
+    >,
+    DummyTimesource,
+>;
+
+// #[derive(Resource)]
+pub struct FileSystemStruct<SdCardDev, TimeSourceDev>(
+    pub  VolumeManager<
+        // SdCard<
+        //     ExclusiveDevice<
+        //         // SPI0,
+        //         // SpiDevice<
+        //         Spi<
+        //             Enabled,
+        //             SPI0,
+        //             (
+        //                 Pin<Gpio19, FunctionSpi, PullDown>,
+        //                 Pin<Gpio16, FunctionSpi, PullDown>,
+        //                 Pin<Gpio18, FunctionSpi, PullDown>,
+        //             ),
+        //             8,
+        //         >,
+        //         // >,
+        //         Pin<Gpio17, FunctionSioOutput, PullDown>,
+        //         Timer<CopyableTimer0>,
+        //     >,
+        //     Timer<CopyableTimer0>,
+        // >,
+        SdCardDev,
+        TimeSourceDev,
+    >,
+)
+where
+    SdCardDev: BlockDevice,
+    TimeSourceDev: TimeSource;
+
+impl<SdCardDev, TimeSourceDev> FileSystemStruct<SdCardDev, TimeSourceDev>
+where
+    SdCardDev: BlockDevice,
+    TimeSourceDev: TimeSource,
+{
+    // pub fn get_file(
+    //     &mut self,
+    //     path: impl ToString,
+    // ) -> Result<File<SdCardDev, TimeSourceDev, _, _, _>, String> {
+    // }
+    pub fn read_from_file(&mut self, path: impl ToString) -> Result<Vec<u8>, String> {
+        let volume0 = self
+            .0
+            .open_volume(VolumeIdx(0))
+            .map_err(|e| format!("{e:?}"))?;
+        let root_dir = volume0.open_root_dir().map_err(|e| format!("{e:?}"))?;
+        let file = root_dir
+            .open_file_in_dir(path.to_string().as_str(), embedded_sdmmc::Mode::ReadOnly)
+            .map_err(|e| format!("{e:?}"))?;
+
+        let mut contents = Vec::with_capacity(32);
+
+        while !file.is_eof() {
+            let mut buffer = [0u8; 32];
+            let num_read = file.read(&mut buffer).unwrap();
+            contents.extend(&buffer[0..num_read]);
+        }
+
+        Ok(contents)
+    }
+
+    pub fn read_text_file(&mut self, path: impl ToString) -> Result<Vec<char>, String> {
+        Ok(self
+            .read_from_file(path)
+            .map(|bytes| bytes.into_iter().map(|byte| byte as char).collect())?)
+    }
+}
 // pub struct FrameBuffer(Vec<Pixel<Rgb565>>);
 pub type FrameBuffer = Vec<(bool, Pixel<Rgb565>)>;
 
