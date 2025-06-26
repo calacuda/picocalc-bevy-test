@@ -230,12 +230,13 @@ impl Plugin for PicoCalcDefaultPlugins {
 
             let mut usb_dev = UsbDeviceBuilder::new(&usb_bus, UsbVidPid(0x16c0, 0x27dd))
                 .strings(&[StringDescriptors::default()
-                    .manufacturer("implRust")
+                    .manufacturer("calacuda")
                     .product("Ferris")
                     .serial_number("TEST")])
                 .unwrap()
                 .device_class(2) // 2 for the CDC, from: https://www.usb.org/defined-class-codes
                 .build();
+            let _ = usb_dev.poll(&mut [&mut serial]);
 
             serial.write(b"starting bevy\n").unwrap();
 
@@ -275,9 +276,6 @@ impl Plugin for PicoCalcDefaultPlugins {
         .insert_non_send_resource(rst)
         // TODO: make a non_send_resource to hold the unused pins which are exposed on the side of
         // the device, I2C, & UARTs.
-        // TODO: make a non_send_resource to hold the SD card
-        // .insert_non_send_resource(volume_mgr)
-        // .insert_non_send_resource(volume0)
         .insert_non_send_resource(fs)
         .insert_resource(KeyPresses::default())
         // .insert_resource(DoubleFrameBuffer::new(320, 320))
@@ -363,32 +361,7 @@ pub type FileSystem = FileSystemStruct<
 >;
 
 // #[derive(Resource)]
-pub struct FileSystemStruct<SdCardDev, TimeSourceDev>(
-    pub  VolumeManager<
-        // SdCard<
-        //     ExclusiveDevice<
-        //         // SPI0,
-        //         // SpiDevice<
-        //         Spi<
-        //             Enabled,
-        //             SPI0,
-        //             (
-        //                 Pin<Gpio19, FunctionSpi, PullDown>,
-        //                 Pin<Gpio16, FunctionSpi, PullDown>,
-        //                 Pin<Gpio18, FunctionSpi, PullDown>,
-        //             ),
-        //             8,
-        //         >,
-        //         // >,
-        //         Pin<Gpio17, FunctionSioOutput, PullDown>,
-        //         Timer<CopyableTimer0>,
-        //     >,
-        //     Timer<CopyableTimer0>,
-        // >,
-        SdCardDev,
-        TimeSourceDev,
-    >,
-)
+pub struct FileSystemStruct<SdCardDev, TimeSourceDev>(pub VolumeManager<SdCardDev, TimeSourceDev>)
 where
     SdCardDev: BlockDevice,
     TimeSourceDev: TimeSource;

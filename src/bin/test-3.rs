@@ -220,9 +220,8 @@ fn main() -> ! {
             Update,
             (
                 walk,
-                toggle_heap_hud,
-                read_test_f,
-                (draw_fps, draw_heap, update_counter).chain(),
+                (toggle_heap_hud, read_test_f),
+                ((draw_fps, draw_heap), update_counter).chain(),
             ),
         )
         .add_systems(PostUpdate, render)
@@ -350,6 +349,7 @@ fn read_test_f(keys: Res<KeyPresses>, mut logger: EventWriter<LoggingEnv>, mut f
             Ok(contents) => contents.into_iter().collect(),
             Err(e) => e,
         };
+        let msg = msg.replace('\n', "\n\r");
 
         logger.write(LoggingEnv { msg });
     }
