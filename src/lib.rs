@@ -196,7 +196,7 @@ impl Plugin for PicoCalcDefaultPlugins {
         let spi = ExclusiveDevice::new(spi, cs, timer).unwrap();
         let sdcard = SdCard::new(spi, timer);
         let volume_mgr = VolumeManager::new(sdcard, DummyTimesource::default());
-        let fs = FileSystem(volume_mgr);
+        let fs = FileSystemStruct(volume_mgr);
 
         // let dir = || {
         //     // let mut volume_mgr = VolumeManager::new(sdcard, DummyTimesource::default());

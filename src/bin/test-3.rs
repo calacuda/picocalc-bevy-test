@@ -23,7 +23,7 @@ use nalgebra::{ComplexField, OPoint};
 use panic_probe as _;
 use picocalc_bevy_test::{
     keys::{KEY_DOWN, KEY_ENTER, KEY_LEFT, KEY_RIGHT, KEY_UP},
-    Display, KeyPresses, LoggingEnv, PicoCalcDefaultPlugins, PicoTimer,
+    Display, KeyPresses, LoggingEnv, PicoCalcDefaultPlugins, PicoTimer, FS,
 };
 use rp235x_hal as hal;
 
@@ -221,6 +221,7 @@ fn main() -> ! {
             (
                 walk,
                 toggle_heap_hud,
+                read_test_f,
                 (draw_fps, draw_heap, update_counter).chain(),
             ),
         )
@@ -338,6 +339,19 @@ fn toggle_heap_hud(
 
             vis.set_visible(visible);
         }
+    }
+}
+
+fn read_test_f(keys: Res<KeyPresses>, mut logger: EventWriter<LoggingEnv>, mut fs: NonSendMut<FS>) {
+    if keys.just_pressed(KEY_ENTER) {
+        let file_contents = fs.read_text_file("TestFile.txt");
+
+        let msg = match file_contents {
+            Ok(contents) => contents.into_iter().collect(),
+            Err(e) => e,
+        };
+
+        logger.write(LoggingEnv { msg });
     }
 }
 
