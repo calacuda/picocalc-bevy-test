@@ -349,9 +349,11 @@ fn read_test_f(keys: Res<KeyPresses>, mut logger: EventWriter<LoggingEnv>, mut f
             Ok(contents) => contents.into_iter().collect(),
             Err(e) => e,
         };
-        let msg = msg.replace('\n', "\n\r");
 
-        logger.write(LoggingEnv { msg });
+        // logger.write(LoggingEnv { msg = msg.replace('\n', "\n\r") });
+        logger.write(LoggingEnv {
+            msg: format!("file len {} bytes", msg.len()),
+        });
     }
 }
 
