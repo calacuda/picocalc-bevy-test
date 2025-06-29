@@ -12,9 +12,13 @@ A test of rust the bevy game engine running on the [ClockWorkPI Picocalc](https:
 
 Based on [https://github.com/knurling-rs/app-template](https://github.com/knurling-rs/app-template)
 
+## Whats The Point
+
+The point of this repo is to get a bevy application running on a Raspberry Pi Pico 2 powered Picocalc.
+
 ## Test Status
 
-I consider this test a **Success**. The only thing I've yet to implement is audio output
+This test is considered a **Success**. The only thing yet to be implemented is audio output.
 
 - [x] 2d screen rendering
 - [x] 3d screen rendering
@@ -27,8 +31,6 @@ I consider this test a **Success**. The only thing I've yet to implement is audi
 Licensed under
 
 - MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
-
-at your option.
 
 <!-- ### Contribution -->
 <!---->
