@@ -20,13 +20,6 @@ use hal::pac::SPI0;
 use hal::timer::CopyableTimer0;
 use hal::{Timer, I2C};
 use panic_probe as _;
-use usb_device::bus::UsbBusAllocator;
-use usb_device::device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid};
-use usbd_serial::SerialPort;
-
-// Alias for our HAL crate
-use rp235x_hal as hal;
-
 // use defmt_rtt as _;
 use display_interface_spi::SPIInterface;
 use hal::fugit::RateExtU32;
@@ -44,6 +37,10 @@ use hal::{
 use ili9486::{color::PixelFormat, io::shim::OutputOnlyIoPin};
 use ili9486::{Command, Commands, ILI9486};
 use pac::SPI1;
+pub use rp235x_hal as hal;
+use usb_device::bus::UsbBusAllocator;
+use usb_device::device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid};
+use usbd_serial::SerialPort; // Alias for our HAL crate
 
 pub mod keys;
 
@@ -51,7 +48,7 @@ pub mod keys;
 /// Adjust if your board has a different frequency
 pub const XTAL_FREQ_HZ: u32 = 12_000_000u32;
 
-// Keyboard  I2C stuff
+// Keyboard I2C stuff
 pub const _REG_VER: u8 = 0x01; // fw version
 pub const _REG_CFG: u8 = 0x02; //  config
 pub const _REG_INT: u8 = 0x03; //  interrupt status
@@ -198,25 +195,6 @@ impl Plugin for PicoCalcDefaultPlugins {
         let volume_mgr = VolumeManager::new(sdcard, DummyTimesource::default());
         let fs = FileSystemStruct(volume_mgr);
 
-        // let dir = || {
-        //     // let mut volume_mgr = VolumeManager::new(sdcard, DummyTimesource::default());
-        //     // let vol0 = volume_mgr
-        //     //     .open_volume(VolumeIdx(0))
-        //     //     .map_or(None, |vol| Some(vol));
-        //     // let dir = vol0.map_or(None, move |vol| {
-        //     //     vol.open_root_dir().map_or(None, |dir| Some(dir))
-        //     // });
-        //     let mut volume_mgr = VolumeManager::new(sdcard, DummyTimesource::default());
-        //     let Ok(mut volume0) = volume_mgr.open_volume(VolumeIdx(0)) else {
-        //         return None;
-        //     };
-        //     let Ok(mut root_dir) = volume0.open_root_dir() else {
-        //         return None;
-        //     };
-        //
-        //     Some(root_dir)
-        // };
-
         app.set_runner(move |mut app| {
             // usb logging
             let usb_bus = UsbBusAllocator::new(hal::usb::UsbBus::new(
@@ -275,7 +253,7 @@ impl Plugin for PicoCalcDefaultPlugins {
         .insert_non_send_resource(pico_timer)
         .insert_non_send_resource(rst)
         // TODO: make a non_send_resource to hold the unused pins which are exposed on the side of
-        // the device, I2C, & UARTs.
+        // the device, the remaining I2C interface, the unused UART, & PIO state machines.
         .insert_non_send_resource(fs)
         .insert_resource(KeyPresses::default())
         // .insert_resource(DoubleFrameBuffer::new(320, 320))
@@ -371,11 +349,6 @@ where
     SdCardDev: BlockDevice,
     TimeSourceDev: TimeSource,
 {
-    // pub fn get_file(
-    //     &mut self,
-    //     path: impl ToString,
-    // ) -> Result<File<SdCardDev, TimeSourceDev, _, _, _>, String> {
-    // }
     pub fn read_from_file(&mut self, path: impl ToString) -> Result<Vec<u8>, String> {
         let volume0 = self
             .0
