@@ -10,7 +10,6 @@ use embedded_alloc::LlffHeap as Heap;
 use embedded_gfx::{
     draw::draw,
     mesh::{Geometry, K3dMesh, RenderMode},
-    K3dengine, PI,
 };
 use embedded_graphics::{
     mono_font::{ascii::FONT_6X12, MonoTextStyle},
@@ -18,12 +17,13 @@ use embedded_graphics::{
     prelude::*,
     text::Text,
 };
+use nalgebra::ComplexField;
 use nalgebra::Point3;
-use nalgebra::{ComplexField, OPoint};
 use panic_probe as _;
 use picocalc_bevy_test::{
     keys::{KEY_DOWN, KEY_ENTER, KEY_LEFT, KEY_RIGHT, KEY_UP},
-    Display, KeyPresses, LoggingEnv, PicoCalcDefaultPlugins, PicoTimer, FS,
+    Display, DoubleBufferRes, Engine3d, KeyPresses, LoggingEnv, PicoCalcDefaultPlugins, PicoTimer,
+    PlayerLocation, FS,
 };
 use rp235x_hal as hal;
 
@@ -41,14 +41,6 @@ pub struct Counter(pub u32);
 
 #[derive(Default, Resource)]
 pub struct GroundPlane(pub Vec<[f32; 3]>, pub Vec<[usize; 2]>);
-
-#[derive(Default, Clone, PartialEq, PartialOrd, Resource)]
-pub struct PlayerLocation {
-    pub pos: Point3<f32>,
-    pub dir: f32,
-    pub head: f32,
-    pub looking_at: OPoint<f32, nalgebra::Const<3>>,
-}
 
 #[derive(Component, Default)]
 pub struct Renderable;
@@ -87,74 +79,6 @@ impl Default for Mesh3D {
             scale: 1.0,
             color: Rgb565::GREEN,
         }
-    }
-}
-
-#[derive(Resource)]
-pub struct Engine3d {
-    pub engine: K3dengine,
-    pub changed: bool,
-}
-
-impl Engine3d {
-    pub fn new(w: u16, h: u16) -> Self {
-        let mut engine = K3dengine::new(w, h);
-        engine.camera.set_fovy(PI / 4.0);
-
-        Self {
-            engine,
-            changed: true,
-        }
-    }
-}
-
-#[derive(Resource)]
-pub struct DoubleBufferRes<RES>
-where
-    RES: Resource + Clone + PartialEq,
-{
-    pub res: [RES; 2],
-    i: usize,
-    new: bool,
-}
-
-impl<RES> DoubleBufferRes<RES>
-where
-    RES: Resource + Clone + PartialEq,
-{
-    pub fn new(res: RES) -> Self {
-        let res = [res.clone(), res.clone()];
-
-        Self {
-            res,
-            i: 0,
-            new: true,
-        }
-    }
-
-    pub fn get_active(&mut self) -> &RES {
-        &self.res[self.i]
-    }
-
-    pub fn get_active_mut(&mut self) -> &mut RES {
-        &mut self.res[self.i]
-    }
-
-    pub fn get_inactive(&mut self) -> &RES {
-        &self.res[(self.i + 1) % 2]
-    }
-
-    pub fn switch(&mut self) {
-        self.res[(self.i + 1) % 2] = self.res[self.i].clone();
-
-        self.i += 1;
-        self.i %= 2;
-
-        self.new = false;
-    }
-
-    pub fn was_updated(&self) -> bool {
-        self.res[0] != self.res[1] || self.new
     }
 }
 
@@ -215,7 +139,7 @@ fn main() -> ! {
             ..default()
         }))
         .insert_resource(Engine3d::new(320, 320))
-        .add_systems(Startup, (clear_display, setup))
+        .add_systems(Startup, setup)
         .add_systems(
             Update,
             (
@@ -518,11 +442,6 @@ fn render(
     // call DoubleBufferRes::switch()
     player_buf.switch();
     camera.changed = false;
-}
-
-fn clear_display(mut display: NonSendMut<Display>) {
-    let Display { output } = display.as_mut();
-    _ = output.clear(Rgb565::BLACK);
 }
 
 // fn clear_display(mut display: NonSendMut<DoubleFrameBuffer>) {

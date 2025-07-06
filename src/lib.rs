@@ -7,6 +7,7 @@ use bevy::prelude::*;
 use core::convert::Infallible;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use defmt_brtt as _;
+use embedded_gfx::{K3dengine, PI};
 use embedded_graphics::primitives::Rectangle;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*, Pixel};
 use embedded_hal::spi::MODE_3;
@@ -20,6 +21,7 @@ use hal::pac::SPI0;
 use hal::timer::CopyableTimer0;
 use hal::{Timer, I2C};
 use ili9486::Command;
+use nalgebra::{OPoint, Point3};
 use panic_probe as _;
 // use defmt_rtt as _;
 use display_interface_spi::SPIInterface;
@@ -259,10 +261,36 @@ impl Plugin for PicoCalcDefaultPlugins {
         .insert_resource(KeyPresses::default())
         // .insert_resource(DoubleFrameBuffer::new(320, 320))
         // .insert_non_send_resource(DoubleFrameBuffer::new(lcd_driver, 320, 320))
-        .add_systems(Startup, (start_timer, tick_timer))
+        .add_systems(Startup, (start_timer, tick_timer, clear_display))
         .add_systems(Update, get_key_report)
         // .add_systems(Update, usb_poll)
         .add_systems(PostUpdate, tick_timer);
+    }
+}
+
+#[derive(Default, Clone, PartialEq, PartialOrd, Resource)]
+pub struct PlayerLocation {
+    pub pos: Point3<f32>,
+    pub dir: f32,
+    pub head: f32,
+    pub looking_at: OPoint<f32, nalgebra::Const<3>>,
+}
+
+#[derive(Resource)]
+pub struct Engine3d {
+    pub engine: K3dengine,
+    pub changed: bool,
+}
+
+impl Engine3d {
+    pub fn new(w: u16, h: u16) -> Self {
+        let mut engine = K3dengine::new(w, h);
+        engine.camera.set_fovy(PI / 4.0);
+
+        Self {
+            engine,
+            changed: true,
+        }
     }
 }
 
@@ -876,6 +904,11 @@ pub type RawDisplay = ILI9486<
     >,
     u8,
 >;
+
+fn clear_display(mut display: NonSendMut<Display>) {
+    let Display { output } = display.as_mut();
+    _ = output.clear(Rgb565::BLACK);
+}
 
 #[derive(Event, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct LoggingEnv {
