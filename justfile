@@ -1,3 +1,6 @@
+_:
+  @just -l
+
 check:
   @just cargo check
 

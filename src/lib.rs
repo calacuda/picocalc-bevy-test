@@ -19,6 +19,7 @@ use hal::pac::I2C1;
 use hal::pac::SPI0;
 use hal::timer::CopyableTimer0;
 use hal::{Timer, I2C};
+use ili9486::Command;
 use panic_probe as _;
 // use defmt_rtt as _;
 use display_interface_spi::SPIInterface;
@@ -34,14 +35,13 @@ use hal::{
     sio::Sio,
     watchdog::Watchdog,
 };
-use ili9486::{color::PixelFormat, io::shim::OutputOnlyIoPin};
-use ili9486::{Command, Commands, ILI9486};
+pub use ili9486 as screen;
+use ili9486::{color::PixelFormat, io::shim::OutputOnlyIoPin, Commands, ILI9486};
 use pac::SPI1;
-pub use rp235x_hal as hal;
+pub use rp235x_hal as hal; // Alias for our HAL crate
 use usb_device::bus::UsbBusAllocator;
 use usb_device::device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid};
-use usbd_serial::SerialPort; // Alias for our HAL crate
-
+use usbd_serial::SerialPort;
 pub mod keys;
 
 /// External high-speed crystal on the Raspberry Pi Pico 2 board is 12 MHz.
@@ -107,6 +107,7 @@ impl Plugin for PicoCalcDefaultPlugins {
         // Pin<Gpio12, FunctionSpi, PullDown>,
         // Pin<Gpio10, FunctionSpi, PullDown>,
 
+        // These are implicitly used by the spi driver if they are in the correct mode
         // These are implicitly used by the spi driver if they are in the correct mode
         let dc = pins.gpio14.into_push_pull_output();
         let cs = pins.gpio13.into_push_pull_output();
@@ -262,6 +263,88 @@ impl Plugin for PicoCalcDefaultPlugins {
         .add_systems(Update, get_key_report)
         // .add_systems(Update, usb_poll)
         .add_systems(PostUpdate, tick_timer);
+    }
+}
+
+#[derive(Resource)]
+pub struct DoubleBufferRes<RES>
+where
+    RES: Resource + Clone + PartialEq,
+{
+    pub res: [RES; 2],
+    i: usize,
+    new: bool,
+}
+
+impl<RES> DoubleBufferRes<RES>
+where
+    RES: Resource + Clone + PartialEq,
+{
+    pub fn new(res: RES) -> Self {
+        let res = [res.clone(), res.clone()];
+
+        Self {
+            res,
+            i: 0,
+            new: true,
+        }
+    }
+
+    pub fn get_active(&mut self) -> &RES {
+        &self.res[self.i]
+    }
+
+    pub fn get_active_mut(&mut self) -> &mut RES {
+        &mut self.res[self.i]
+    }
+
+    pub fn get_inactive(&mut self) -> &RES {
+        &self.res[(self.i + 1) % 2]
+    }
+
+    pub fn switch(&mut self) {
+        self.res[(self.i + 1) % 2] = self.res[self.i].clone();
+
+        self.i += 1;
+        self.i %= 2;
+
+        self.new = false;
+    }
+
+    pub fn was_updated(&self) -> bool {
+        self.res[0] != self.res[1] || self.new
+    }
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Component)]
+pub struct Visible {
+    is_visible: bool,
+    updated: bool,
+}
+
+impl Visible {
+    pub fn new(is_visible: bool) -> Self {
+        Self {
+            is_visible,
+            updated: true,
+        }
+    }
+
+    pub fn set_visible(&mut self, is_seen: bool) {
+        self.is_visible = is_seen;
+        self.updated = true;
+    }
+
+    pub fn should_show(&self) -> bool {
+        self.is_visible
+    }
+
+    pub fn should_rm(&self) -> bool {
+        self.is_visible || (!self.is_visible && self.updated)
+    }
+
+    pub fn was_rendered(&mut self) {
+        self.updated = false;
     }
 }
 
@@ -690,7 +773,6 @@ impl KeyPresses {
 
     pub fn is_released(&self, key: impl Into<u8>) -> bool {
         match self.get_key_state(key) {
-            KeyState::JustLongReleased | KeyState::JustReleased | KeyState::Released => true,
             _ => false,
         }
     }
