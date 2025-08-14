@@ -905,7 +905,7 @@ pub type RawDisplay = ILI9486<
     u8,
 >;
 
-fn clear_display(mut display: NonSendMut<Display>) {
+pub fn clear_display(mut display: NonSendMut<Display>) {
     let Display { output } = display.as_mut();
     _ = output.clear(Rgb565::BLACK);
 }
