@@ -915,6 +915,38 @@ pub struct LoggingEnv {
     pub msg: String,
 }
 
+impl LoggingEnv {
+    pub fn new(msg: impl core::fmt::Display) -> Self {
+        let msg = msg.to_string();
+
+        Self { msg }
+    }
+
+    pub fn debug(msg: impl core::fmt::Display) -> Self {
+        let msg = format!("[DEBUG] -> {msg}");
+
+        Self { msg }
+    }
+
+    pub fn info(msg: impl core::fmt::Display) -> Self {
+        let msg = format!("[INFO] -> {msg}");
+
+        Self { msg }
+    }
+
+    pub fn warn(msg: impl core::fmt::Display) -> Self {
+        let msg = format!("[WARN] -> {msg}");
+
+        Self { msg }
+    }
+
+    pub fn error(msg: impl core::fmt::Display) -> Self {
+        let msg = format!("[ERROR] -> {msg}");
+
+        Self { msg }
+    }
+}
+
 // same panicking *behavior* as `panic-probe` but doesn't print a panic message
 // this prevents the panic message being printed *twice* when `defmt::panic` is invoked
 #[defmt::panic_handler]
