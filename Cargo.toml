@@ -7,7 +7,7 @@ version = "0.1.0"
 cortex-m = "0.7"
 cortex-m-rt = "0.7.5"
 critical-section = "1.2.0"
-defmt = { version = "0.4", features = ["encoding-rzcobs"] }
+defmt = { version = "1.0", features = ["encoding-rzcobs"] }
 defmt-brtt = { version = "0.1", default-features = false, features = ["rtt"] }
 libm = "0.2.15"
 # panic-halt = "0.2.0"
