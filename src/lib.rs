@@ -344,10 +344,19 @@ where
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Component)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Component)]
 pub struct Visible {
     is_visible: bool,
     updated: bool,
+}
+
+impl Default for Visible {
+    fn default() -> Self {
+        Self {
+            is_visible: true,
+            updated: true,
+        }
+    }
 }
 
 impl Visible {
