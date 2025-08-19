@@ -725,7 +725,7 @@ impl PicoTimer {
     }
 }
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum KeyState {
     JustPressed,
     JustLongPressed,
@@ -737,7 +737,7 @@ pub enum KeyState {
     Released,
 }
 
-#[derive(Resource)]
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct KeyPresses {
     keys: [KeyState; 256],
 }
@@ -804,6 +804,13 @@ impl KeyPresses {
     pub fn is_pressed(&self, key: impl Into<u8>) -> bool {
         match self.get_key_state(key) {
             KeyState::JustLongPressed | KeyState::JustPressed | KeyState::Pressed => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_long_pressed(&self, key: impl Into<u8>) -> bool {
+        match self.get_key_state(key) {
+            KeyState::LongPressed => true,
             _ => false,
         }
     }
